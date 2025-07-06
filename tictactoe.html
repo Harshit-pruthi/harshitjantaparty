@@ -342,7 +342,6 @@
       box-shadow: 0 5px 15px rgba(0,0,0,0.3);
       z-index: 1000;
       animation: slideDown 0.5s ease-out;
-      display: none;
     }
 
     @keyframes slideDown {
@@ -350,79 +349,16 @@
       to { top: 20px; opacity: 1; }
     }
     
-    .waiting-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      z-index: 1000;
-    }
-    
-    .waiting-content {
-      background: rgba(26, 26, 64, 0.9);
-      padding: 30px;
-      border-radius: 15px;
+    .waiting-message {
+      color: #ffcc00;
+      font-style: italic;
+      margin: 15px 0;
       text-align: center;
-      max-width: 500px;
-      box-shadow: 0 0 30px rgba(5, 217, 232, 0.5);
-      border: 2px solid #05d9e8;
-    }
-    
-    .spinner {
-      border: 5px solid rgba(255, 255, 255, 0.1);
-      border-top: 5px solid #05d9e8;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      margin-bottom: 20px;
-    }
-    
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    .waiting-text {
-      font-size: 1.2rem;
-      margin-bottom: 20px;
-      color: #05d9e8;
-    }
-    
-    @media (max-width: 768px) {
-      .header-container {
-        flex-direction: column;
-        gap: 20px;
-      }
-      
-      .game-board {
-        max-width: 90vw;
-      }
-      
-      .score-board {
-        flex-direction: column;
-        gap: 15px;
-        align-items: center;
-      }
     }
   </style>
 </head>
 <body>
-  <div id="notification" class="notification"></div>
-  
-  <div id="waitingOverlay" class="waiting-overlay" style="display: none;">
-    <div class="waiting-content">
-      <div class="spinner"></div>
-      <div class="waiting-text" id="waitingText">Waiting for other players...</div>
-      <button onclick="leaveGame()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
-    </div>
-  </div>
+  <div id="notification" class="notification" style="display: none;"></div>
   
   <div class="header-container">
     <h1><i class="fas fa-times"></i> TIC TAC TOE</h1>
@@ -481,7 +417,7 @@
   </div>
 
   <script>
-    // Firebase config - same as lobby
+    // Firebase config
     const firebaseConfig = {
       apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
       authDomain: "harshitjantaparty-77d46.firebaseapp.com",
@@ -501,7 +437,7 @@
     let gameState = {
       board: Array(9).fill(null),
       currentPlayer: 'X',
-      gameStatus: 'waiting', // Start in waiting state
+      gameStatus: 'playing',
       playerX: null,
       playerO: null,
       scores: { X: 0, O: 0, draw: 0 },
@@ -523,8 +459,6 @@
     const playerXIndicator = document.getElementById('playerX');
     const playerOIndicator = document.getElementById('playerO');
     const notification = document.getElementById('notification');
-    const waitingOverlay = document.getElementById('waitingOverlay');
-    const waitingText = document.getElementById('waitingText');
 
     // Show notification
     function showNotification(message) {
@@ -533,16 +467,6 @@
       setTimeout(() => {
         notification.style.display = 'none';
       }, 3000);
-    }
-    
-    // Show/hide waiting overlay
-    function toggleWaitingOverlay(show, message) {
-      if (show) {
-        waitingText.textContent = message || "Waiting for other players...";
-        waitingOverlay.style.display = 'flex';
-      } else {
-        waitingOverlay.style.display = 'none';
-      }
     }
 
     // Initialize the game
@@ -557,9 +481,6 @@
         setTimeout(() => window.location.href = 'index.html', 2000);
         return;
       }
-      
-      // Show waiting overlay
-      toggleWaitingOverlay(true, "Connecting to game...");
       
       // Set up authentication
       auth.onAuthStateChanged(user => {
@@ -591,37 +512,26 @@
         
         // Load game state
         loadGameState(partyCode);
-      }, error => {
-        console.error("Error loading party:", error);
-        showNotification('Error connecting to party.');
+        
+        // Assign players if needed
+        assignPlayers();
       });
     }
     
     // Load game state from Firestore
     function loadGameState(partyCode) {
+      if (gameListener) gameListener();
+      
       gameListener = db.collection("gameStates").doc(partyCode).onSnapshot(doc => {
         if (doc.exists) {
           const data = doc.data();
           gameState = data;
           updateGameUI();
-          
-          // Assign players if needed
-          if (gameState.gameStatus === 'waiting') {
-            assignPlayers();
-          }
-          
-          // Hide waiting overlay if game is active
-          if (gameState.gameStatus === 'playing' || gameState.gameStatus === 'X_won' || 
-              gameState.gameStatus === 'O_won' || gameState.gameStatus === 'draw') {
-            toggleWaitingOverlay(false);
-          }
+          updatePartyUI();
         } else {
           // Create new game state
           createNewGame(partyCode);
         }
-      }, error => {
-        console.error("Error loading game state:", error);
-        showNotification('Error connecting to game.');
       });
     }
     
@@ -638,21 +548,20 @@
           gameState = newGameState;
           updateGameUI();
           assignPlayers();
-        })
-        .catch(error => {
-          console.error("Error creating game:", error);
-          showNotification('Failed to create game.');
         });
     }
     
     // Assign players to X and O roles
     function assignPlayers() {
-      // Only assign if game is waiting for players
-      if (gameState.gameStatus !== 'waiting') return;
+      if (!currentParty || !gameState) return;
+      
+      // Only assign if game is in progress
+      if (gameState.gameStatus !== 'playing') return;
       
       // Get players who aren't assigned
       const availablePlayers = currentParty.players.filter(player => 
-        player.id !== gameState.playerX?.id && player.id !== gameState.playerO?.id
+        player.id !== (gameState.playerX?.id || '') && 
+        player.id !== (gameState.playerO?.id || '')
       );
       
       if (availablePlayers.length === 0) return;
@@ -662,14 +571,8 @@
         gameState.playerX = availablePlayers[0];
       } 
       // Then assign to O if not assigned
-      if (!gameState.playerO && availablePlayers.length > 0) {
-        gameState.playerO = availablePlayers[availablePlayers.length > 1 ? 1 : 0];
-      }
-      
-      // If we have both players, start the game
-      if (gameState.playerX && gameState.playerO) {
-        gameState.gameStatus = 'playing';
-        gameState.currentPlayer = 'X';
+      else if (!gameState.playerO && availablePlayers.length > 0) {
+        gameState.playerO = availablePlayers[0];
       }
       
       // Update Firestore
@@ -693,16 +596,16 @@
       });
       
       // Update status
-      if (gameState.gameStatus === 'waiting') {
-        gameStatus.textContent = 'Waiting for players';
-        playerTurn.textContent = 'Assigning players...';
-        playerTurn.className = 'player-turn';
-        toggleWaitingOverlay(true, "Waiting for players to join...");
-      } else if (gameState.gameStatus === 'playing') {
-        gameStatus.textContent = 'Game in progress';
-        playerTurn.textContent = `${gameState.currentPlayer}'s turn`;
-        playerTurn.className = `player-turn ${gameState.currentPlayer.toLowerCase()}`;
-        toggleWaitingOverlay(false);
+      if (gameState.gameStatus === 'playing') {
+        if (gameState.playerX && gameState.playerO) {
+          gameStatus.textContent = 'Game in progress';
+          playerTurn.textContent = `${gameState.currentPlayer}'s turn`;
+          playerTurn.className = `player-turn ${gameState.currentPlayer.toLowerCase()}`;
+        } else {
+          gameStatus.textContent = 'Waiting for players...';
+          playerTurn.textContent = `Need ${!gameState.playerX ? 'Player X' : 'Player O'}`;
+          playerTurn.className = 'player-turn';
+        }
       } else if (gameState.gameStatus === 'X_won') {
         gameStatus.textContent = 'Player X Wins!';
         playerTurn.textContent = 'Game over';
@@ -729,6 +632,8 @@
     
     // Update party UI
     function updatePartyUI() {
+      if (!currentParty) return;
+      
       partyCodeDisplay.textContent = currentParty.code;
       partyNameDisplay.textContent = currentParty.name;
       playerCount.textContent = currentParty.players.length;
@@ -775,24 +680,32 @@
     
     // Handle cell click
     function handleCellClick(cell) {
-      if (gameState.gameStatus !== 'playing') return;
+      if (gameState.gameStatus !== 'playing') {
+        showNotification("Game is not active!");
+        return;
+      }
+      
+      // Check if both players are assigned
+      if (!gameState.playerX || !gameState.playerO) {
+        showNotification("Waiting for another player to join...");
+        return;
+      }
       
       const index = parseInt(cell.getAttribute('data-index'));
       
       // Check if cell is empty
-      if (gameState.board[index] !== null) return;
+      if (gameState.board[index] !== null) {
+        showNotification("This cell is already taken!");
+        return;
+      }
       
       // Check if it's current player's turn
-      if (
-        (gameState.currentPlayer === 'X' && 
-         (!gameState.playerX || currentUser.uid !== gameState.playerX.id)) {
+      if (gameState.currentPlayer === 'X' && currentUser.uid !== gameState.playerX.id) {
         showNotification("It's not your turn!");
         return;
       }
       
-      if (
-        (gameState.currentPlayer === 'O' && 
-         (!gameState.playerO || currentUser.uid !== gameState.playerO.id)) {
+      if (gameState.currentPlayer === 'O' && currentUser.uid !== gameState.playerO.id) {
         showNotification("It's not your turn!");
         return;
       }
@@ -857,7 +770,6 @@
       db.collection("gameStates").doc(currentParty.code).update(gameState)
         .catch(error => {
           console.error("Error updating game state: ", error);
-          showNotification('Failed to update game.');
         });
     }
     
@@ -935,27 +847,6 @@
       if (gameListener) gameListener();
       window.location.href = 'index.html';
     }
-    
-    // Handle tab close
-    window.addEventListener('beforeunload', function(e) {
-      if (currentParty && currentUser && currentUser.uid !== currentParty.hostId) {
-        const userData = { id: currentUser.uid, name: currentUser.displayName };
-        // Remove from party
-        db.collection("parties").doc(currentParty.code).update({
-          players: firebase.firestore.FieldValue.arrayRemove(userData)
-        });
-        
-        // Remove from game state if assigned
-        if (gameState.playerX && currentUser.uid === gameState.playerX.id) {
-          gameState.playerX = null;
-          updateGameState();
-        }
-        if (gameState.playerO && currentUser.uid === gameState.playerO.id) {
-          gameState.playerO = null;
-          updateGameState();
-        }
-      }
-    });
     
     // Initialize the game when page loads
     window.onload = initGame;
