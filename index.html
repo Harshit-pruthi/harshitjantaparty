@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Lobby</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Oxanium:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Oxanium', sans-serif;
+    }
+
+    body {
+      background: linear-gradient(135deg, #1a1a40, #270082);
+      color: #d1d1d1;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #05d9e8;
+      color: #1a1a40;
+      padding: 12px 24px;
+      border-radius: 30px;
+      font-weight: bold;
+      z-index: 1000;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.5s, fadeOut 0.5s 2.5s forwards;
+    }
+
+    @keyframes slideIn {
+      from { top: -100px; }
+      to { top: 20px; }
+    }
+
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; visibility: hidden; }
+    }
+
+    h1, h2, h3 {
+      font-family: 'Orbitron', sans-serif;
+      color: #05d9e8;
+      text-align: center;
+      margin: 20px 0;
+      text-shadow: 0 0 10px rgba(5, 217, 232, 0.7);
+      letter-spacing: 1px;
+    }
+
+    h1 {
+      font-size: 2.8rem;
+      margin-top: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    button {
+      background: linear-gradient(to right, #ff2a6d, #d80077);
+      color: white;
+      border: none;
+      padding: 12px 25px;
+      margin: 10px;
+      border-radius: 50px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      font-weight: bold;
+      transition: all 0.3s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    }
+
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(255, 42, 109, 0.4);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button i {
+      font-size: 1.2rem;
+    }
+
+    #auth {
+      display: flex;
+      justify-content: center;
+      margin: 40px 0;
+    }
+
+    #lobbyUI {
+      background: rgba(39, 0, 130, 0.4);
+      border-radius: 20px;
+      padding: 30px;
+      margin: 30px auto;
+      max-width: 600px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(5, 217, 232, 0.2);
+    }
+
+    #lobbyUI h2 {
+      margin-bottom: 30px;
+      color: #fff;
+    }
+
+    #lobby {
+      background: rgba(26, 26, 64, 0.7);
+      border-radius: 20px;
+      padding: 30px;
+      margin: 30px auto;
+      max-width: 800px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(5, 217, 232, 0.2);
+    }
+
+    .lobby-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid rgba(5, 217, 232, 0.3);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      color: #05d9e8;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      background-color: #05d9e8;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.7; }
+      50% { opacity: 1; }
+      100% { opacity: 0.7; }
+    }
+
+    #lobby p {
+      margin: 15px 0;
+      font-size: 1.1rem;
+      display: flex;
+      gap: 10px;
+    }
+
+    #lobby p strong {
+      color: #ff2a6d;
+      min-width: 100px;
+    }
+
+    #playerList {
+      list-style: none;
+      margin: 20px 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 15px;
+    }
+
+    #playerList li {
+      background: rgba(39, 0, 130, 0.3);
+      border-radius: 15px;
+      padding: 15px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: transform 0.3s ease;
+      border: 1px solid rgba(5, 217, 232, 0.1);
+    }
+
+    #playerList li:hover {
+      transform: translateY(-3px);
+      background: rgba(39, 0, 130, 0.5);
+    }
+
+    .player-avatar {
+      width: 45px;
+      height: 45px;
+      background: linear-gradient(135deg, #ff2a6d, #d80077);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .player-info {
+      flex: 1;
+    }
+
+    .player-name {
+      font-weight: bold;
+      font-size: 1.1rem;
+      margin-bottom: 5px;
+    }
+
+    .role-tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .host-tag {
+      background: linear-gradient(135deg, #05d9e8, #0084b8);
+      color: #1a1a40;
+    }
+
+    .player-tag {
+      background: linear-gradient(135deg, #7b42f5, #b01eff);
+      color: white;
+    }
+
+    .lobby-controls {
+      display: flex;
+      justify-content: center;
+      margin-top: 30px;
+      gap: 20px;
+    }
+
+    #games {
+      background: rgba(26, 26, 64, 0.7);
+      border-radius: 20px;
+      padding: 30px;
+      margin: 30px auto;
+      max-width: 1000px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(5, 217, 232, 0.2);
+      display: none;
+    }
+
+    .back-btn {
+      background: #7b42f5;
+      margin-bottom: 25px;
+    }
+
+    #games p {
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 1.1rem;
+      color: #d1d1d1;
+    }
+
+    .game-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 25px;
+    }
+
+    .game-card {
+      background: rgba(39, 0, 130, 0.3);
+      border-radius: 15px;
+      padding: 25px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .game-card:hover {
+      transform: translateY(-5px);
+      border-color: #05d9e8;
+      box-shadow: 0 10px 25px rgba(5, 217, 232, 0.2);
+    }
+
+    .game-card.selected {
+      border-color: #ff2a6d;
+      background: rgba(39, 0, 130, 0.5);
+      transform: scale(1.05);
+    }
+
+    .game-icon {
+      font-size: 3.5rem;
+      margin-bottom: 15px;
+      color: #05d9e8;
+    }
+
+    .game-title {
+      font-size: 1.3rem;
+      font-weight: bold;
+      color: white;
+    }
+
+    #gameInfo {
+      background: rgba(39, 0, 130, 0.3);
+      border-radius: 15px;
+      padding: 25px;
+      margin-top: 40px;
+      border: 1px solid rgba(5, 217, 232, 0.2);
+    }
+
+    #gameInfo h3 {
+      color: #ff2a6d;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    #gameDescription {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      margin-bottom: 25px;
+      text-align: center;
+    }
+
+    #startGameBtn {
+      display: block;
+      margin: 20px auto 0;
+      padding: 15px 40px;
+      font-size: 1.2rem;
+    }
+
+    #createModal, #joinModal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(26, 26, 64, 0.95);
+      border-radius: 20px;
+      padding: 30px;
+      z-index: 1000;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
+      border: 2px solid #ff2a6d;
+      backdrop-filter: blur(10px);
+    }
+
+    #createModal h3, #joinModal h3 {
+      text-align: center;
+      margin-bottom: 25px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px 20px;
+      margin: 15px 0;
+      border-radius: 50px;
+      border: 2px solid #7b42f5;
+      background: rgba(39, 0, 130, 0.3);
+      color: white;
+      font-size: 1rem;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #05d9e8;
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 999;
+    }
+
+    .waiting-message {
+      text-align: center;
+      margin: 30px 0;
+      padding: 20px;
+      background: rgba(39, 0, 130, 0.3);
+      border-radius: 15px;
+      font-size: 1.2rem;
+      border-left: 4px solid #05d9e8;
+    }
+
+    .waiting-message i {
+      font-size: 2rem;
+      color: #05d9e8;
+      margin-bottom: 15px;
+      display: block;
+    }
+
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2.2rem;
+      }
+      
+      .game-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      
+      .lobby-controls {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 480px) {
+      h1 {
+        font-size: 1.8rem;
+      }
+      
+      .game-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      #playerList {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="notification" class="notification" style="display: none;"></div>
+  <div class="overlay" id="overlay"></div>
+  
+  <div class="container">
+    <h1><i class="fas fa-gamepad"></i> GAME LOBBY</h1>
+
+    <div id="auth">
+      <button id="signInBtn"><i class="fab fa-google"></i> Sign in with Google</button>
+      <button id="signOutBtn" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+    </div>
+
+    <div id="lobbyUI" style="display:none;">
+      <h2>Welcome, <span id="userName"></span></h2>
+      <button onclick="showCreateModal()"><i class="fas fa-plus-circle"></i> Create Party</button>
+      <button onclick="showJoinModal()"><i class="fas fa-sign-in-alt"></i> Join Party</button>
+    </div>
+
+    <div id="lobby" style="display:none;">
+      <div class="lobby-header">
+        <h2><i class="fas fa-door-open"></i> Lobby: <span id="lobbyCode"></span></h2>
+        <div class="status-indicator">
+          <div class="status-dot"></div>
+          <span>Connected</span>
+        </div>
+      </div>
+      <p><strong>Party Name:</strong> <span id="lobbyName"></span></p>
+      <p><strong>Players</strong> (<span id="currentPlayers"></span>/<span id="maxPlayers"></span>):</p>
+      <ul id="playerList"></ul>
+      
+      <div id="hostControls" style="display: none;">
+        <div class="lobby-controls">
+          <button id="playGamesBtn" onclick="showGames()"><i class="fas fa-play"></i> Play Games</button>
+          <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
+        </div>
+      </div>
+      
+      <div id="playerControls" style="display: none;">
+        <div class="waiting-message">
+          <i class="fas fa-hourglass-half"></i>
+          <p>Waiting for the host to start the game...</p>
+        </div>
+        <div class="lobby-controls">
+          <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="games">
+      <button class="back-btn" onclick="goBackToLobby()"><i class="fas fa-arrow-left"></i> Back</button>
+      <h2><i class="fas fa-gamepad"></i> Select a Game</h2>
+      <p>Choose a game to play with your party members</p>
+      
+      <div class="game-grid">
+        <div class="game-card" onclick="selectGame('tictactoe')">
+          <i class="fas fa-times game-icon"></i>
+          <span class="game-title">Tic Tac Toe</span>
+        </div>
+        
+        <div class="game-card" onclick="selectGame('rps')">
+          <i class="fas fa-hand-rock game-icon"></i>
+          <span class="game-title">Rock Paper Scissors</span>
+        </div>
+        
+        <div class="game-card" onclick="selectGame('trivia')">
+          <i class="fas fa-question-circle game-icon"></i>
+          <span class="game-title">Trivia Challenge</span>
+        </div>
+        
+        <div class="game-card" onclick="selectGame('cards')">
+          <i class="fas fa-cards game-icon"></i>
+          <span class="game-title">Card Battle</span>
+        </div>
+      </div>
+      
+      <div id="gameInfo" style="margin-top: 30px; display: none;">
+        <h3>Game Info</h3>
+        <p id="gameDescription"></p>
+        <button id="startGameBtn" onclick="startGame()" style="margin-top: 15px;"><i class="fas fa-play"></i> Start Game</button>
+      </div>
+    </div>
+
+    <div id="createModal">
+      <h3><i class="fas fa-plus-circle"></i> Create Party</h3>
+      <input id="partyName" placeholder="Party Name" />
+      <select id="playerLimit">
+        <option value="4">4 Players</option>
+        <option value="6">6 Players</option>
+        <option value="8" selected>8 Players</option>
+      </select>
+      <div class="modal-buttons">
+        <button onclick="createParty()">Create</button>
+        <button onclick="closeModal('createModal')" style="background: #7b42f5;">Cancel</button>
+      </div>
+    </div>
+
+    <div id="joinModal">
+      <h3><i class="fas fa-sign-in-alt"></i> Join Party</h3>
+      <input id="joinCode" placeholder="Party Code" />
+      <div class="modal-buttons">
+        <button onclick="joinParty()">Join</button>
+        <button onclick="closeModal('joinModal')" style="background: #7b42f5;">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
+      authDomain: "harshitjantaparty-77d46.firebaseapp.com",
+      projectId: "harshitjantaparty-77d46",
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    let currentUser = null;
+    let currentParty = null;
+    let partyListener = null;
+    let selectedGame = null;
+    const gameDescriptions = {
+      tictactoe: "Classic Tic Tac Toe game. Play against other players in your lobby in this timeless strategy game.",
+      rps: "Rock, Paper, Scissors! Challenge your friends to the ultimate hand game. Best of three wins!",
+      trivia: "Test your knowledge with trivia questions on various topics. Compete to see who knows the most!",
+      cards: "A strategic card battle game. Build your deck and challenge other players in exciting duels."
+    };
+
+    // Show notification function
+    function showNotification(message) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.style.display = 'block';
+      setTimeout(() => {
+        notification.style.display = 'none';
+      }, 3000);
+    }
+
+    // Modal functions
+    function showModal(modalId) {
+      document.getElementById(modalId).style.display = 'block';
+      document.getElementById('overlay').style.display = 'block';
+    }
+    
+    function closeModal(modalId) {
+      document.getElementById(modalId).style.display = 'none';
+      document.getElementById('overlay').style.display = 'none';
+    }
+
+    document.getElementById('signInBtn').onclick = () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      auth.signInWithPopup(provider);
+    };
+
+    document.getElementById('signOutBtn').onclick = () => {
+      auth.signOut();
+      location.reload();
+    };
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        document.getElementById('signInBtn').style.display = 'none';
+        document.getElementById('signOutBtn').style.display = 'inline-block';
+        document.getElementById('userName').textContent = user.displayName;
+        document.getElementById('lobbyUI').style.display = 'block';
+      } else {
+        document.getElementById('signInBtn').style.display = 'inline-block';
+        document.getElementById('signOutBtn').style.display = 'none';
+        document.getElementById('lobbyUI').style.display = 'none';
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('games').style.display = 'none';
+      }
+    });
+
+    function showCreateModal() {
+      showModal('createModal');
+      document.getElementById('partyName').value = `${currentUser.displayName}'s Party`;
+    }
+
+    function showJoinModal() {
+      showModal('joinModal');
+      document.getElementById('joinCode').value = '';
+      document.getElementById('joinCode').focus();
+    }
+
+    function generateCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      return code;
+    }
+
+    function createParty() {
+      const partyName = document.getElementById('partyName').value;
+      const maxPlayers = parseInt(document.getElementById('playerLimit').value);
+      const code = generateCode();
+
+      const partyData = {
+        name: partyName,
+        code,
+        maxPlayers,
+        hostId: currentUser.uid,
+        players: [{ id: currentUser.uid, name: currentUser.displayName }],
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        currentGame: null
+      };
+
+      db.collection("parties").doc(code).set(partyData).then(() => {
+        listenToPartyUpdates(code);
+        document.getElementById('lobbyUI').style.display = 'none';
+        document.getElementById('lobby').style.display = 'block';
+        closeModal('createModal');
+        showNotification('Party created successfully!');
+      });
+    }
+
+    function joinParty() {
+      const code = document.getElementById('joinCode').value.toUpperCase();
+
+      db.collection("parties").doc(code).get().then(doc => {
+        if (!doc.exists) return showNotification("Party not found");
+        const party = doc.data();
+        if (party.players.length >= party.maxPlayers) return showNotification("Party full");
+        if (party.players.some(p => p.id === currentUser.uid)) return showNotification("Already joined");
+
+        const newPlayer = { id: currentUser.uid, name: currentUser.displayName };
+        db.collection("parties").doc(code).update({
+          players: firebase.firestore.FieldValue.arrayUnion(newPlayer)
+        }).then(() => {
+          listenToPartyUpdates(code);
+          document.getElementById('lobbyUI').style.display = 'none';
+          document.getElementById('lobby').style.display = 'block';
+          closeModal('joinModal');
+          showNotification('Joined party successfully!');
+        });
+      });
+    }
+
+    function listenToPartyUpdates(code) {
+      partyListener = db.collection("parties").doc(code).onSnapshot(doc => {
+        if (!doc.exists) return leaveParty();
+        currentParty = doc.data();
+        updateLobbyUI(currentParty);
+        
+        // Check if host started a game
+        if (currentParty.currentGame) {
+          if (currentParty.currentGame === 'tictactoe') {
+            // Redirect to Tic Tac Toe game
+            window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
+          }
+        }
+      });
+    }
+
+    function updateLobbyUI(party) {
+      document.getElementById('lobbyCode').textContent = party.code;
+      document.getElementById('lobbyName').textContent = party.name;
+      document.getElementById('currentPlayers').textContent = party.players.length;
+      document.getElementById('maxPlayers').textContent = party.maxPlayers;
+
+      const list = document.getElementById('playerList');
+      list.innerHTML = '';
+      
+      party.players.forEach(p => {
+        const li = document.createElement('li');
+        
+        // Create player avatar
+        const avatar = document.createElement('div');
+        avatar.className = 'player-avatar';
+        avatar.textContent = p.name.charAt(0);
+        li.appendChild(avatar);
+        
+        // Player info container
+        const infoContainer = document.createElement('div');
+        infoContainer.className = 'player-info';
+        
+        // Player name
+        const nameSpan = document.createElement('div');
+        nameSpan.className = 'player-name';
+        nameSpan.textContent = p.name;
+        infoContainer.appendChild(nameSpan);
+        
+        // Role tag
+        const roleTag = document.createElement('div');
+        roleTag.className = 'role-tag';
+        
+        if (p.id === party.hostId) {
+          roleTag.classList.add('host-tag');
+          roleTag.textContent = 'Host';
+        } else {
+          roleTag.classList.add('player-tag');
+          roleTag.textContent = 'Player';
+        }
+        infoContainer.appendChild(roleTag);
+        
+        li.appendChild(infoContainer);
+        list.appendChild(li);
+      });
+      
+      // Show appropriate controls based on host status
+      const hostControls = document.getElementById('hostControls');
+      const playerControls = document.getElementById('playerControls');
+      
+      if (currentUser.uid === party.hostId) {
+        hostControls.style.display = 'block';
+        playerControls.style.display = 'none';
+      } else {
+        hostControls.style.display = 'none';
+        playerControls.style.display = 'block';
+      }
+    }
+
+    function showGames() {
+      // Only host can access game selection
+      if (currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can start games!');
+        return;
+      }
+      
+      document.getElementById('lobby').style.display = 'none';
+      document.getElementById('games').style.display = 'block';
+      document.getElementById('gameInfo').style.display = 'none';
+      selectedGame = null;
+      
+      // Reset game card selections
+      document.querySelectorAll('.game-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+    }
+
+    function goBackToLobby() {
+      document.getElementById('games').style.display = 'none';
+      document.getElementById('lobby').style.display = 'block';
+    }
+
+    function selectGame(game) {
+      selectedGame = game;
+      
+      // Highlight selected game
+      document.querySelectorAll('.game-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      event.currentTarget.classList.add('selected');
+      
+      document.getElementById('gameDescription').textContent = gameDescriptions[game];
+      document.getElementById('gameInfo').style.display = 'block';
+      
+      // Only show start button for host
+      const startBtn = document.getElementById('startGameBtn');
+      if (currentUser.uid === currentParty.hostId) {
+        startBtn.style.display = 'block';
+      } else {
+        startBtn.style.display = 'none';
+      }
+      
+      // Scroll to game info
+      document.getElementById('gameInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function startGame() {
+      if (!selectedGame || !currentParty) return;
+      
+      // Only host can start games - double verification
+      if (currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can start games!');
+        return;
+      }
+      
+      // Update party with selected game
+      db.collection("parties").doc(currentParty.code).update({
+        currentGame: selectedGame
+      }).then(() => {
+        showNotification(`Starting ${selectedGame} game...`);
+        // Redirect to game page
+        if (selectedGame === 'tictactoe') {
+          window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
+        }
+      });
+    }
+
+    function leaveParty() {
+      if (!currentParty || !currentUser) return;
+      
+      const userData = { id: currentUser.uid, name: currentUser.displayName };
+      
+      if (currentUser.uid === currentParty.hostId) {
+        // HOST: Delete entire lobby
+        db.collection("parties").doc(currentParty.code).delete()
+          .then(() => {
+            cleanupAfterLeave();
+            showNotification('Party deleted successfully!');
+          })
+          .catch(error => {
+            console.error("Error deleting party: ", error);
+            cleanupAfterLeave();
+          });
+      } else {
+        // REGULAR PLAYER: Just remove self
+        db.collection("parties").doc(currentParty.code).update({
+          players: firebase.firestore.FieldValue.arrayRemove(userData)
+        })
+        .then(() => {
+          cleanupAfterLeave();
+          showNotification('Left party successfully!');
+        })
+        .catch(error => {
+          console.error("Error leaving party: ", error);
+          showNotification('Error leaving party. Please try again.');
+        });
+      }
+    }
+
+    function cleanupAfterLeave() {
+      if (partyListener) {
+        partyListener();
+        partyListener = null;
+      }
+      document.getElementById('lobby').style.display = 'none';
+      document.getElementById('games').style.display = 'none';
+      document.getElementById('lobbyUI').style.display = 'block';
+      currentParty = null;
+    }
+
+    // Handle host tab closure
+    window.addEventListener('beforeunload', function(event) {
+      if (currentParty && currentUser && currentUser.uid === currentParty.hostId) {
+        db.collection("parties").doc(currentParty.code).delete()
+          .catch(error => console.error("Error deleting party during unload:", error));
+      }
+    });
+
+    // Initialize the app
+    window.onload = function() {
+      // Add animation to header
+      const header = document.querySelector('h1');
+      setInterval(() => {
+        const hue = Math.floor(Math.random() * 360);
+        header.style.textShadow = `0 0 20px hsl(${hue}, 100%, 50%)`;
+      }, 2000);
+    };
+  </script>
+</body>
+</html>
