@@ -515,6 +515,10 @@
         
         // Assign players if needed
         assignPlayers();
+      }, error => {
+        console.error("Error loading party: ", error);
+        showNotification('Error loading party. Redirecting to lobby.');
+        setTimeout(() => window.location.href = 'index.html', 2000);
       });
     }
     
@@ -548,6 +552,10 @@
           gameState = newGameState;
           updateGameUI();
           assignPlayers();
+        })
+        .catch(error => {
+          console.error("Error creating game state: ", error);
+          showNotification('Error creating game. Please try again.');
         });
     }
     
@@ -770,6 +778,7 @@
       db.collection("gameStates").doc(currentParty.code).update(gameState)
         .catch(error => {
           console.error("Error updating game state: ", error);
+          showNotification("Error updating game. Please try again.");
         });
     }
     
