@@ -880,14 +880,6 @@
       currentParty = null;
     }
 
-    // Handle host tab closure
-    window.addEventListener('beforeunload', function(event) {
-      if (currentParty && currentUser && currentUser.uid === currentParty.hostId) {
-        db.collection("parties").doc(currentParty.code).delete()
-          .catch(error => console.error("Error deleting party during unload:", error));
-      }
-    });
-
     // Initialize the app
     window.onload = function() {
       // Add animation to header
