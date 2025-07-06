@@ -41,7 +41,7 @@
     <p><strong>Players</strong> (<span id="currentPlayers"></span>/<span id="maxPlayers"></span>):</p>
     <ul id="playerList"></ul>
     <div class="lobby-controls">
-      <button onclick="showGames()"><i class="fas fa-play"></i> Play Games</button>
+      <button id="playGamesBtn" onclick="showGames()"><i class="fas fa-play"></i> Play Games</button>
       <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
     </div>
   </div>
@@ -268,9 +268,23 @@
         
         list.appendChild(li);
       });
+      
+      // Only show Play Games button for host
+      const playGamesBtn = document.getElementById('playGamesBtn');
+      if (currentUser.uid === party.hostId) {
+        playGamesBtn.style.display = 'block';
+      } else {
+        playGamesBtn.style.display = 'none';
+      }
     }
 
     function showGames() {
+      // Only host can access game selection
+      if (currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can start games!');
+        return;
+      }
+      
       document.getElementById('lobby').style.display = 'none';
       document.getElementById('games').style.display = 'block';
       document.getElementById('gameInfo').style.display = 'none';
