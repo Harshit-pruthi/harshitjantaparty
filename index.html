@@ -35,6 +35,12 @@
       color: #00d9ff;
       text-shadow: 0 0 20px #00d9ff;
       margin-bottom: 20px;
+      animation: glow 2s infinite alternate;
+    }
+
+    @keyframes glow {
+      0% { text-shadow: 0 0 10px #00d9ff; }
+      100% { text-shadow: 0 0 30px #00d9ff, 0 0 40px #00d9ff; }
     }
 
     #auth, #lobbyUI, #lobby, #games {
@@ -47,6 +53,12 @@
       max-width: 600px;
       text-align: center;
       position: relative;
+      animation: fadeIn 0.5s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     button {
@@ -135,6 +147,12 @@
       z-index: 999;
       width: 90%;
       max-width: 400px;
+      animation: modalFade 0.3s ease-out;
+    }
+
+    @keyframes modalFade {
+      from { opacity: 0; transform: translate(-50%, -60%); }
+      to { opacity: 1; transform: translate(-50%, -50%); }
     }
 
     #games {
@@ -160,6 +178,7 @@
       justify-content: center;
       gap: 10px;
       height: 150px;
+      transition: all 0.3s ease;
     }
 
     .game-card:hover {
@@ -238,10 +257,38 @@
       height: 10px;
       border-radius: 50%;
       background: #00ff00;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.8); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(0.8); }
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 42, 109, 0.9);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      z-index: 1000;
+      animation: slideDown 0.5s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { top: -50px; opacity: 0; }
+      to { top: 20px; opacity: 1; }
     }
   </style>
 </head>
 <body>
+  <div id="notification" class="notification" style="display: none;"></div>
+  
   <h1><i class="fas fa-gamepad"></i> GAME LOBBY</h1>
 
   <div id="auth">
@@ -268,7 +315,7 @@
     <ul id="playerList"></ul>
     <div class="lobby-controls">
       <button onclick="showGames()"><i class="fas fa-play"></i> Play Games</button>
-      <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave</button>
+      <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
     </div>
   </div>
 
@@ -302,7 +349,7 @@
     <div id="gameInfo" style="margin-top: 30px; display: none;">
       <h3>Game Info</h3>
       <p id="gameDescription"></p>
-      <button onclick="startGame()" style="margin-top: 15px;"><i class="fas fa-play"></i> Start Game</button>
+      <button id="startGameBtn" onclick="startGame()" style="margin-top: 15px;"><i class="fas fa-play"></i> Start Game</button>
     </div>
   </div>
 
@@ -351,6 +398,16 @@
       trivia: "Test your knowledge with trivia questions on various topics. Compete to see who knows the most!",
       cards: "A strategic card battle game. Build your deck and challenge other players in exciting duels."
     };
+
+    // Show notification function
+    function showNotification(message) {
+      const notification = document.getElementById('notification');
+      notification.textContent = message;
+      notification.style.display = 'block';
+      setTimeout(() => {
+        notification.style.display = 'none';
+      }, 3000);
+    }
 
     document.getElementById('signInBtn').onclick = () => {
       const provider = new firebase.auth.GoogleAuthProvider();
@@ -401,7 +458,8 @@
         maxPlayers,
         hostId: currentUser.uid,
         players: [{ id: currentUser.uid, name: currentUser.displayName }],
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        currentGame: null
       };
 
       db.collection("parties").doc(code).set(partyData).then(() => {
@@ -409,6 +467,7 @@
         document.getElementById('lobbyUI').style.display = 'none';
         document.getElementById('lobby').style.display = 'block';
         document.getElementById('createModal').style.display = 'none';
+        showNotification('Party created successfully!');
       });
     }
 
@@ -416,10 +475,10 @@
       const code = document.getElementById('joinCode').value.toUpperCase();
 
       db.collection("parties").doc(code).get().then(doc => {
-        if (!doc.exists) return alert("Party not found");
+        if (!doc.exists) return showNotification("Party not found");
         const party = doc.data();
-        if (party.players.length >= party.maxPlayers) return alert("Party full");
-        if (party.players.some(p => p.id === currentUser.uid)) return alert("Already joined");
+        if (party.players.length >= party.maxPlayers) return showNotification("Party full");
+        if (party.players.some(p => p.id === currentUser.uid)) return showNotification("Already joined");
 
         const newPlayer = { id: currentUser.uid, name: currentUser.displayName };
         db.collection("parties").doc(code).update({
@@ -429,6 +488,7 @@
           document.getElementById('lobbyUI').style.display = 'none';
           document.getElementById('lobby').style.display = 'block';
           document.getElementById('joinModal').style.display = 'none';
+          showNotification('Joined party successfully!');
         });
       });
     }
@@ -438,6 +498,14 @@
         if (!doc.exists) return leaveParty();
         currentParty = doc.data();
         updateLobbyUI(currentParty);
+        
+        // Check if host started a game
+        if (currentParty.currentGame) {
+          if (currentParty.currentGame === 'tictactoe') {
+            // Redirect to Tic Tac Toe game
+            window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
+          }
+        }
       });
     }
 
@@ -492,6 +560,14 @@
       document.getElementById('gameDescription').textContent = gameDescriptions[game];
       document.getElementById('gameInfo').style.display = 'block';
       
+      // Only show start button for host
+      const startBtn = document.getElementById('startGameBtn');
+      if (currentUser.uid === currentParty.hostId) {
+        startBtn.style.display = 'block';
+      } else {
+        startBtn.style.display = 'none';
+      }
+      
       // Scroll to game info
       document.getElementById('gameInfo').scrollIntoView({ behavior: 'smooth' });
     }
@@ -499,14 +575,22 @@
     function startGame() {
       if (!selectedGame || !currentParty) return;
       
-      // For Tic Tac Toe, open the game page
-      if (selectedGame === 'tictactoe') {
-        // Pass party code and user ID as URL parameters
-        window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-      } else {
-        // For other games, show an alert
-        alert(`Starting ${selectedGame} game with your party members!`);
+      // Only host can start games
+      if (currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can start games!');
+        return;
       }
+      
+      // Update party with selected game
+      db.collection("parties").doc(currentParty.code).update({
+        currentGame: selectedGame
+      }).then(() => {
+        if (selectedGame === 'tictactoe') {
+          window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
+        } else {
+          showNotification(`Starting ${selectedGame} game...`);
+        }
+      });
     }
 
     function leaveParty() {
@@ -519,6 +603,7 @@
         db.collection("parties").doc(currentParty.code).delete()
           .then(() => {
             cleanupAfterLeave();
+            showNotification('Party deleted successfully!');
           })
           .catch(error => {
             console.error("Error deleting party: ", error);
@@ -531,6 +616,7 @@
         })
         .then(() => {
           cleanupAfterLeave();
+          showNotification('Left party successfully!');
         });
       }
     }
