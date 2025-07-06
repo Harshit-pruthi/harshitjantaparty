@@ -35,6 +35,12 @@
       color: #00d9ff;
       text-shadow: 0 0 20px #00d9ff;
       margin-bottom: 20px;
+      animation: glow 2s infinite alternate;
+    }
+
+    @keyframes glow {
+      0% { text-shadow: 0 0 10px #00d9ff; }
+      100% { text-shadow: 0 0 30px #00d9ff, 0 0 40px #00d9ff; }
     }
 
     .header-container {
@@ -44,6 +50,12 @@
       width: 100%;
       max-width: 1000px;
       margin-bottom: 20px;
+      animation: fadeIn 0.8s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .party-info {
@@ -317,9 +329,30 @@
       margin-top: 5px;
       font-style: italic;
     }
+    
+    .notification {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 42, 109, 0.9);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+      z-index: 1000;
+      animation: slideDown 0.5s ease-out;
+    }
+
+    @keyframes slideDown {
+      from { top: -50px; opacity: 0; }
+      to { top: 20px; opacity: 1; }
+    }
   </style>
 </head>
 <body>
+  <div id="notification" class="notification" style="display: none;"></div>
+  
   <div class="header-container">
     <h1><i class="fas fa-times"></i> TIC TAC TOE</h1>
     <div class="party-info">
@@ -418,6 +451,16 @@
     const scoreDraw = document.getElementById('scoreDraw');
     const playerXIndicator = document.getElementById('playerX');
     const playerOIndicator = document.getElementById('playerO');
+    const notification = document.getElementById('notification');
+
+    // Show notification
+    function showNotification(message) {
+      notification.textContent = message;
+      notification.style.display = 'block';
+      setTimeout(() => {
+        notification.style.display = 'none';
+      }, 3000);
+    }
 
     // Initialize the game
     function initGame() {
@@ -427,8 +470,8 @@
       const uid = urlParams.get('uid');
       
       if (!partyCode || !uid) {
-        alert('Missing parameters. Redirecting to lobby.');
-        window.location.href = 'index.html';
+        showNotification('Missing parameters. Redirecting to lobby.');
+        setTimeout(() => window.location.href = 'index.html', 2000);
         return;
       }
       
@@ -439,7 +482,8 @@
           loadParty(partyCode);
         } else {
           // Not authenticated - redirect to lobby
-          window.location.href = 'index.html';
+          showNotification('Authentication failed. Redirecting to lobby.');
+          setTimeout(() => window.location.href = 'index.html', 2000);
         }
       });
       
@@ -451,8 +495,8 @@
     function loadParty(partyCode) {
       partyListener = db.collection("parties").doc(partyCode).onSnapshot(doc => {
         if (!doc.exists) {
-          alert('Party not found. Redirecting to lobby.');
-          window.location.href = 'index.html';
+          showNotification('Party not found. Redirecting to lobby.');
+          setTimeout(() => window.location.href = 'index.html', 2000);
           return;
         }
         
@@ -627,12 +671,14 @@
       if (
         (gameState.currentPlayer === 'X' && 
          (!gameState.playerX || currentUser.uid !== gameState.playerX.id)) {
+        showNotification("It's not your turn!");
         return;
       }
       
       if (
         (gameState.currentPlayer === 'O' && 
          (!gameState.playerO || currentUser.uid !== gameState.playerO.id)) {
+        showNotification("It's not your turn!");
         return;
       }
       
@@ -645,15 +691,18 @@
         if (winner === 'X') {
           gameState.gameStatus = 'X_won';
           gameState.scores.X += 1;
+          showNotification("Player X wins!");
         } else if (winner === 'O') {
           gameState.gameStatus = 'O_won';
           gameState.scores.O += 1;
+          showNotification("Player O wins!");
         }
       } 
       // Check for draw
       else if (gameState.board.every(cell => cell !== null)) {
         gameState.gameStatus = 'draw';
         gameState.scores.draw += 1;
+        showNotification("It's a draw!");
       } 
       // Continue game
       else {
@@ -698,6 +747,12 @@
     
     // Reset the game
     function resetGame() {
+      // Only host can reset the game
+      if (currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can reset the game!');
+        return;
+      }
+      
       gameState.board = Array(9).fill(null);
       gameState.currentPlayer = 'X';
       gameState.gameStatus = 'playing';
@@ -711,31 +766,57 @@
       }
       
       updateGameState();
+      showNotification('Game reset!');
     }
     
     // Leave the game and return to lobby
     function leaveGame() {
-      if (partyListener) {
-        partyListener();
-      }
-      if (gameListener) {
-        gameListener();
+      if (!currentParty || !currentUser) {
+        window.location.href = 'index.html';
+        return;
       }
       
-      // If user was a player, remove them from player assignment
-      if (
-        (gameState.playerX && currentUser.uid === gameState.playerX.id) || 
-        (gameState.playerO && currentUser.uid === gameState.playerO.id)
-      ) {
-        if (gameState.playerX && currentUser.uid === gameState.playerX.id) {
-          gameState.playerX = null;
-        }
-        if (gameState.playerO && currentUser.uid === gameState.playerO.id) {
-          gameState.playerO = null;
-        }
-        updateGameState();
-      }
+      const userData = { id: currentUser.uid, name: currentUser.displayName };
       
+      if (currentUser.uid === currentParty.hostId) {
+        // Host leaves: delete party and game state
+        db.collection("parties").doc(currentParty.code).delete()
+          .then(() => {
+            db.collection("gameStates").doc(currentParty.code).delete().catch(() => {});
+            cleanupAndRedirect();
+            showNotification('Party deleted!');
+          })
+          .catch(error => {
+            console.error("Error deleting party: ", error);
+            cleanupAndRedirect();
+          });
+      } else {
+        // Non-host: remove from party and update game state
+        db.collection("parties").doc(currentParty.code).update({
+          players: firebase.firestore.FieldValue.arrayRemove(userData)
+        })
+        .then(() => {
+          // Remove from game state if assigned
+          if (gameState.playerX && currentUser.uid === gameState.playerX.id) {
+            gameState.playerX = null;
+          }
+          if (gameState.playerO && currentUser.uid === gameState.playerO.id) {
+            gameState.playerO = null;
+          }
+          updateGameState();
+          cleanupAndRedirect();
+          showNotification('Left party!');
+        })
+        .catch(error => {
+          console.error("Error leaving party: ", error);
+          cleanupAndRedirect();
+        });
+      }
+    }
+    
+    function cleanupAndRedirect() {
+      if (partyListener) partyListener();
+      if (gameListener) gameListener();
       window.location.href = 'index.html';
     }
     
