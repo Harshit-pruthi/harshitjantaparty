@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tic Tac Toe - Game Lobby</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Oxanium:wght@400;700&display=swap" rel="stylesheet">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      transition: all 0.3s ease;
+    }
+
+    body {
+      font-family: 'Oxanium', sans-serif;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 3rem;
+      color: #00d9ff;
+      text-shadow: 0 0 20px #00d9ff;
+      margin-bottom: 20px;
+    }
+
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      max-width: 1000px;
+      margin-bottom: 20px;
+    }
+
+    .party-info {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 15px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0, 217, 255, 0.4);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .party-info p {
+      margin: 5px 0;
+      font-size: 0.9rem;
+    }
+
+    .party-info strong {
+      color: #00d9ff;
+    }
+
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 1000px;
+      gap: 30px;
+    }
+
+    .game-board {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 12px;
+      width: 100%;
+      max-width: 500px;
+      aspect-ratio: 1/1;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+    }
+
+    .cell {
+      background: #1a1a2e;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 4rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      aspect-ratio: 1/1;
+    }
+
+    .cell:hover {
+      background: rgba(0, 217, 255, 0.1);
+      transform: scale(1.03);
+    }
+
+    .cell.x {
+      color: #ff2a6d;
+      text-shadow: 0 0 15px rgba(255, 42, 109, 0.7);
+    }
+
+    .cell.o {
+      color: #05d9e8;
+      text-shadow: 0 0 15px rgba(5, 217, 232, 0.7);
+    }
+
+    .status-container {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0, 217, 255, 0.4);
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+    }
+
+    .game-status {
+      font-size: 1.5rem;
+      margin-bottom: 15px;
+      color: #00d9ff;
+    }
+
+    .player-turn {
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+    }
+
+    .player-turn.x {
+      color: #ff2a6d;
+    }
+
+    .player-turn.o {
+      color: #05d9e8;
+    }
+
+    .players-container {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0, 217, 255, 0.4);
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .players-container h3 {
+      text-align: center;
+      margin-bottom: 15px;
+      color: #00d9ff;
+    }
+
+    .player-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .player-item {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      gap: 10px;
+    }
+
+    .player-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #ff2a6d, #05d9e8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+
+    .player-name {
+      flex-grow: 1;
+    }
+
+    .player-symbol {
+      font-size: 1.5rem;
+      font-weight: bold;
+      width: 30px;
+      text-align: center;
+    }
+
+    .player-symbol.x {
+      color: #ff2a6d;
+    }
+
+    .player-symbol.o {
+      color: #05d9e8;
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 12px 20px;
+      background: linear-gradient(135deg, #ff2a6d, #05d9e8);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(255, 255, 255, 0.2);
+    }
+
+    button.secondary {
+      background: transparent;
+      border: 2px solid #05d9e8;
+    }
+
+    .winning-cell {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.5); }
+      50% { box-shadow: 0 0 20px rgba(0, 217, 255, 0.8); }
+      100% { box-shadow: 0 0 5px rgba(255, 255, 255, 0.5); }
+    }
+    
+    .winner-display {
+      font-size: 2rem;
+      text-align: center;
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      animation: winnerPulse 2s infinite;
+    }
+    
+    @keyframes winnerPulse {
+      0% { 
+        text-shadow: 0 0 5px #fff, 0 0 10px #fff;
+        transform: scale(1);
+      }
+      50% { 
+        text-shadow: 0 0 20px #ff0, 0 0 30px #ff0;
+        transform: scale(1.05);
+      }
+      100% { 
+        text-shadow: 0 0 5px #fff, 0 0 10px #fff;
+        transform: scale(1);
+      }
+    }
+    
+    .score-board {
+      display: flex;
+      justify-content: space-around;
+      width: 100%;
+      max-width: 500px;
+      margin-top: 20px;
+    }
+    
+    .score-box {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 15px;
+      border-radius: 10px;
+      text-align: center;
+      min-width: 120px;
+    }
+    
+    .score-box.x {
+      border: 2px solid #ff2a6d;
+    }
+    
+    .score-box.o {
+      border: 2px solid #05d9e8;
+    }
+    
+    .score-value {
+      font-size: 2rem;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+    
+    .x .score-value {
+      color: #ff2a6d;
+    }
+    
+    .o .score-value {
+      color: #05d9e8;
+    }
+    
+    .player-indicator {
+      font-size: 0.9rem;
+      margin-top: 5px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-container">
+    <h1><i class="fas fa-times"></i> TIC TAC TOE</h1>
+    <div class="party-info">
+      <p><strong>Party:</strong> <span id="partyNameDisplay">Game Night</span></p>
+      <p><strong>Code:</strong> <span id="partyCodeDisplay">ABCD12</span></p>
+      <p><strong>Players:</strong> <span id="playerCount">2</span>/<span id="maxPlayers">4</span></p>
+    </div>
+  </div>
+
+  <div class="game-container">
+    <div class="game-board" id="gameBoard">
+      <div class="cell" data-index="0"></div>
+      <div class="cell" data-index="1"></div>
+      <div class="cell" data-index="2"></div>
+      <div class="cell" data-index="3"></div>
+      <div class="cell" data-index="4"></div>
+      <div class="cell" data-index="5"></div>
+      <div class="cell" data-index="6"></div>
+      <div class="cell" data-index="7"></div>
+      <div class="cell" data-index="8"></div>
+    </div>
+    
+    <div class="score-board">
+      <div class="score-box x">
+        <div>Player X</div>
+        <div class="score-value" id="scoreX">0</div>
+        <div class="player-indicator" id="playerX">-</div>
+      </div>
+      <div class="score-box">
+        <div>Draws</div>
+        <div class="score-value" id="scoreDraw">0</div>
+      </div>
+      <div class="score-box o">
+        <div>Player O</div>
+        <div class="score-value" id="scoreO">0</div>
+        <div class="player-indicator" id="playerO">-</div>
+      </div>
+    </div>
+    
+    <div class="status-container">
+      <div class="game-status" id="gameStatus">Game in progress</div>
+      <div class="player-turn x" id="playerTurn">Player X's turn</div>
+      <div class="controls">
+        <button onclick="resetGame()"><i class="fas fa-redo"></i> Reset Game</button>
+        <button class="secondary" onclick="leaveGame()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
+      </div>
+    </div>
+    
+    <div class="players-container">
+      <h3><i class="fas fa-users"></i> Party Players</h3>
+      <div class="player-list" id="playerList">
+        <!-- Players will be added here dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Firebase config - same as lobby
+    const firebaseConfig = {
+      apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
+      authDomain: "harshitjantaparty-77d46.firebaseapp.com",
+      projectId: "harshitjantaparty-77d46",
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // Game state variables
+    let currentUser = null;
+    let currentParty = null;
+    let partyListener = null;
+    let gameListener = null;
+    let gameState = {
+      board: Array(9).fill(null),
+      currentPlayer: 'X',
+      gameStatus: 'playing',
+      playerX: null,
+      playerO: null,
+      scores: { X: 0, O: 0, draw: 0 },
+      winningCells: []
+    };
+
+    // DOM Elements
+    const gameBoard = document.getElementById('gameBoard');
+    const gameStatus = document.getElementById('gameStatus');
+    const playerTurn = document.getElementById('playerTurn');
+    const playerList = document.getElementById('playerList');
+    const partyCodeDisplay = document.getElementById('partyCodeDisplay');
+    const partyNameDisplay = document.getElementById('partyNameDisplay');
+    const playerCount = document.getElementById('playerCount');
+    const maxPlayers = document.getElementById('maxPlayers');
+    const scoreX = document.getElementById('scoreX');
+    const scoreO = document.getElementById('scoreO');
+    const scoreDraw = document.getElementById('scoreDraw');
+    const playerXIndicator = document.getElementById('playerX');
+    const playerOIndicator = document.getElementById('playerO');
+
+    // Initialize the game
+    function initGame() {
+      // Get party code from URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const partyCode = urlParams.get('partyCode');
+      const uid = urlParams.get('uid');
+      
+      if (!partyCode || !uid) {
+        alert('Missing parameters. Redirecting to lobby.');
+        window.location.href = 'index.html';
+        return;
+      }
+      
+      // Set up authentication
+      auth.onAuthStateChanged(user => {
+        if (user && user.uid === uid) {
+          currentUser = user;
+          loadParty(partyCode);
+        } else {
+          // Not authenticated - redirect to lobby
+          window.location.href = 'index.html';
+        }
+      });
+      
+      // Set up game board
+      setupBoard();
+    }
+    
+    // Load party information
+    function loadParty(partyCode) {
+      partyListener = db.collection("parties").doc(partyCode).onSnapshot(doc => {
+        if (!doc.exists) {
+          alert('Party not found. Redirecting to lobby.');
+          window.location.href = 'index.html';
+          return;
+        }
+        
+        currentParty = doc.data();
+        updatePartyUI();
+        
+        // Load game state
+        loadGameState(partyCode);
+      });
+    }
+    
+    // Load game state from Firestore
+    function loadGameState(partyCode) {
+      gameListener = db.collection("gameStates").doc(partyCode).onSnapshot(doc => {
+        if (doc.exists) {
+          const data = doc.data();
+          gameState = data;
+          updateGameUI();
+          
+          // Assign players if needed
+          if (!gameState.playerX && currentParty.players.length > 0) {
+            assignPlayers();
+          }
+        } else {
+          // Create new game state
+          createNewGame(partyCode);
+        }
+      });
+    }
+    
+    // Create new game state in Firestore
+    function createNewGame(partyCode) {
+      const newGameState = {
+        ...gameState,
+        partyCode: partyCode,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      
+      db.collection("gameStates").doc(partyCode).set(newGameState)
+        .then(() => {
+          gameState = newGameState;
+          updateGameUI();
+          assignPlayers();
+        });
+    }
+    
+    // Assign players to X and O roles
+    function assignPlayers() {
+      if (gameState.playerX && gameState.playerO) return;
+      
+      // Get players who aren't assigned
+      const availablePlayers = currentParty.players.filter(player => 
+        player.id !== gameState.playerX?.id && player.id !== gameState.playerO?.id
+      );
+      
+      if (availablePlayers.length === 0) return;
+      
+      // Assign first available player to X if not assigned
+      if (!gameState.playerX) {
+        gameState.playerX = availablePlayers[0];
+      } 
+      // Then assign to O if not assigned
+      else if (!gameState.playerO && availablePlayers.length > 0) {
+        gameState.playerO = availablePlayers[0];
+      }
+      
+      // Update Firestore
+      updateGameState();
+    }
+    
+    // Update the game UI
+    function updateGameUI() {
+      // Update board
+      gameState.board.forEach((value, index) => {
+        const cell = document.querySelector(`.cell[data-index="${index}"]`);
+        cell.textContent = value || '';
+        cell.className = `cell ${value ? value.toLowerCase() : ''}`;
+        
+        // Add winning cell effect
+        if (gameState.winningCells.includes(index)) {
+          cell.classList.add('winning-cell');
+        } else {
+          cell.classList.remove('winning-cell');
+        }
+      });
+      
+      // Update status
+      if (gameState.gameStatus === 'playing') {
+        gameStatus.textContent = 'Game in progress';
+        playerTurn.textContent = `${gameState.currentPlayer}'s turn`;
+        playerTurn.className = `player-turn ${gameState.currentPlayer.toLowerCase()}`;
+      } else if (gameState.gameStatus === 'X_won') {
+        gameStatus.textContent = 'Player X Wins!';
+        playerTurn.textContent = 'Game over';
+        playerTurn.className = 'player-turn';
+      } else if (gameState.gameStatus === 'O_won') {
+        gameStatus.textContent = 'Player O Wins!';
+        playerTurn.textContent = 'Game over';
+        playerTurn.className = 'player-turn';
+      } else if (gameState.gameStatus === 'draw') {
+        gameStatus.textContent = 'Game Draw!';
+        playerTurn.textContent = 'No winner';
+        playerTurn.className = 'player-turn';
+      }
+      
+      // Update scores
+      scoreX.textContent = gameState.scores.X;
+      scoreO.textContent = gameState.scores.O;
+      scoreDraw.textContent = gameState.scores.draw;
+      
+      // Update player indicators
+      playerXIndicator.textContent = gameState.playerX ? gameState.playerX.name : 'Not assigned';
+      playerOIndicator.textContent = gameState.playerO ? gameState.playerO.name : 'Not assigned';
+    }
+    
+    // Update party UI
+    function updatePartyUI() {
+      partyCodeDisplay.textContent = currentParty.code;
+      partyNameDisplay.textContent = currentParty.name;
+      playerCount.textContent = currentParty.players.length;
+      maxPlayers.textContent = currentParty.maxPlayers;
+      
+      // Update player list
+      playerList.innerHTML = '';
+      currentParty.players.forEach(player => {
+        const playerItem = document.createElement('div');
+        playerItem.className = 'player-item';
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'player-avatar';
+        avatar.textContent = player.name.charAt(0);
+        
+        const name = document.createElement('div');
+        name.className = 'player-name';
+        name.textContent = player.name;
+        
+        const symbol = document.createElement('div');
+        symbol.className = 'player-symbol';
+        
+        if (gameState.playerX && player.id === gameState.playerX.id) {
+          symbol.textContent = 'X';
+          symbol.classList.add('x');
+        } else if (gameState.playerO && player.id === gameState.playerO.id) {
+          symbol.textContent = 'O';
+          symbol.classList.add('o');
+        }
+        
+        playerItem.appendChild(avatar);
+        playerItem.appendChild(name);
+        playerItem.appendChild(symbol);
+        playerList.appendChild(playerItem);
+      });
+    }
+    
+    // Set up the game board
+    function setupBoard() {
+      gameBoard.querySelectorAll('.cell').forEach(cell => {
+        cell.addEventListener('click', () => handleCellClick(cell));
+      });
+    }
+    
+    // Handle cell click
+    function handleCellClick(cell) {
+      if (gameState.gameStatus !== 'playing') return;
+      
+      const index = parseInt(cell.getAttribute('data-index'));
+      
+      // Check if cell is empty
+      if (gameState.board[index] !== null) return;
+      
+      // Check if it's current player's turn
+      if (
+        (gameState.currentPlayer === 'X' && 
+         (!gameState.playerX || currentUser.uid !== gameState.playerX.id)) {
+        return;
+      }
+      
+      if (
+        (gameState.currentPlayer === 'O' && 
+         (!gameState.playerO || currentUser.uid !== gameState.playerO.id)) {
+        return;
+      }
+      
+      // Update board
+      gameState.board[index] = gameState.currentPlayer;
+      
+      // Check for winner
+      const winner = checkWinner();
+      if (winner) {
+        if (winner === 'X') {
+          gameState.gameStatus = 'X_won';
+          gameState.scores.X += 1;
+        } else if (winner === 'O') {
+          gameState.gameStatus = 'O_won';
+          gameState.scores.O += 1;
+        }
+      } 
+      // Check for draw
+      else if (gameState.board.every(cell => cell !== null)) {
+        gameState.gameStatus = 'draw';
+        gameState.scores.draw += 1;
+      } 
+      // Continue game
+      else {
+        gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
+      }
+      
+      // Update Firestore
+      updateGameState();
+    }
+    
+    // Check for winner
+    function checkWinner() {
+      const winPatterns = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
+        [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
+        [0, 4, 8], [2, 4, 6]             // diagonals
+      ];
+      
+      for (const pattern of winPatterns) {
+        const [a, b, c] = pattern;
+        if (
+          gameState.board[a] && 
+          gameState.board[a] === gameState.board[b] && 
+          gameState.board[a] === gameState.board[c]
+        ) {
+          gameState.winningCells = pattern;
+          return gameState.board[a];
+        }
+      }
+      
+      gameState.winningCells = [];
+      return null;
+    }
+    
+    // Update game state in Firestore
+    function updateGameState() {
+      db.collection("gameStates").doc(currentParty.code).update(gameState)
+        .catch(error => {
+          console.error("Error updating game state: ", error);
+        });
+    }
+    
+    // Reset the game
+    function resetGame() {
+      gameState.board = Array(9).fill(null);
+      gameState.currentPlayer = 'X';
+      gameState.gameStatus = 'playing';
+      gameState.winningCells = [];
+      
+      // Rotate players if both are present
+      if (gameState.playerX && gameState.playerO) {
+        const temp = gameState.playerX;
+        gameState.playerX = gameState.playerO;
+        gameState.playerO = temp;
+      }
+      
+      updateGameState();
+    }
+    
+    // Leave the game and return to lobby
+    function leaveGame() {
+      if (partyListener) {
+        partyListener();
+      }
+      if (gameListener) {
+        gameListener();
+      }
+      
+      // If user was a player, remove them from player assignment
+      if (
+        (gameState.playerX && currentUser.uid === gameState.playerX.id) || 
+        (gameState.playerO && currentUser.uid === gameState.playerO.id)
+      ) {
+        if (gameState.playerX && currentUser.uid === gameState.playerX.id) {
+          gameState.playerX = null;
+        }
+        if (gameState.playerO && currentUser.uid === gameState.playerO.id) {
+          gameState.playerO = null;
+        }
+        updateGameState();
+      }
+      
+      window.location.href = 'index.html';
+    }
+    
+    // Initialize the game when page loads
+    window.onload = initGame;
+  </script>
+</body>
+</html>
