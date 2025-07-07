@@ -484,7 +484,7 @@
       
       // Set up authentication
       auth.onAuthStateChanged(user => {
-        if (user && user.uid === uid) {
+        if (user) {
           currentUser = user;
           loadParty(partyCode);
         } else {
@@ -508,6 +508,15 @@
         }
         
         currentParty = doc.data();
+        
+        // Check if current user is in the party
+        const userInParty = currentParty.players.some(player => player.id === currentUser.uid);
+        if (!userInParty) {
+          showNotification('You are not in this party. Redirecting to lobby.');
+          setTimeout(() => window.location.href = 'index.html', 2000);
+          return;
+        }
+        
         updatePartyUI();
         
         // Load game state
@@ -727,7 +736,7 @@
         }
       } 
       // Check for draw
-      else if (gameState.board.every(cell => cell !== null)) {
+      else if (isBoardFull()) {
         gameState.gameStatus = 'draw';
         gameState.scores.draw += 1;
         showNotification("It's a draw!");
@@ -739,6 +748,11 @@
       
       // Update Firestore
       updateGameState();
+    }
+    
+    // Check if board is full
+    function isBoardFull() {
+      return gameState.board.every(cell => cell !== null);
     }
     
     // Check for winner
