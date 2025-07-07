@@ -9,7 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <style>
+ <style>
     * {
       margin: 0;
       padding: 0;
@@ -541,8 +541,8 @@
       <h3><i class="fas fa-plus-circle"></i> Create Party</h3>
       <input id="partyName" placeholder="Party Name" />
       <select id="playerLimit">
+        <option value="2">2 Players</option>
         <option value="4">4 Players</option>
-        <option value="6">6 Players</option>
         <option value="8" selected>8 Players</option>
       </select>
       <div class="modal-buttons">
@@ -578,7 +578,7 @@
     let partyListener = null;
     let selectedGame = null;
     const gameDescriptions = {
-      tictactoe: "Classic Tic Tac Toe game. Play against other players in your lobby in this timeless strategy game.",
+      tictactoe: "Classic Tic Tac Toe game. Play against other players in your lobby in this timeless strategy game. Tournament mode automatically activates for 4 or 8 players.",
       rps: "Rock, Paper, Scissors! Challenge your friends to the ultimate hand game. Best of three wins!",
       trivia: "Test your knowledge with trivia questions on various topics. Compete to see who knows the most!",
       cards: "A strategic card battle game. Build your deck and challenge other players in exciting duels."
@@ -879,6 +879,14 @@
       document.getElementById('lobbyUI').style.display = 'block';
       currentParty = null;
     }
+
+    // Handle host tab closure
+    window.addEventListener('beforeunload', function(event) {
+      if (currentParty && currentUser && currentUser.uid === currentParty.hostId) {
+        db.collection("parties").doc(currentParty.code).delete()
+          .catch(error => console.error("Error deleting party during unload:", error));
+      }
+    });
 
     // Initialize the app
     window.onload = function() {
