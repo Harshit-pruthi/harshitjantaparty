@@ -4,8 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tic Tac Toe - Game Lobby</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Oxanium:wght@400;700&display=swap" rel="stylesheet">
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
@@ -358,512 +356,86 @@
   </style>
 </head>
 <body>
-  <div id="notification" class="notification" style="display: none;"></div>
-  
-  <div class="header-container">
-    <h1><i class="fas fa-times"></i> TIC TAC TOE</h1>
-    <div class="party-info">
-      <p><strong>Party:</strong> <span id="partyNameDisplay">Game Night</span></p>
-      <p><strong>Code:</strong> <span id="partyCodeDisplay">ABCD12</span></p>
-      <p><strong>Players:</strong> <span id="playerCount">2</span>/<span id="maxPlayers">4</span></p>
-    </div>
-  </div>
-
-  <div class="game-container">
-    <div class="game-board" id="gameBoard">
-      <div class="cell" data-index="0"></div>
-      <div class="cell" data-index="1"></div>
-      <div class="cell" data-index="2"></div>
-      <div class="cell" data-index="3"></div>
-      <div class="cell" data-index="4"></div>
-      <div class="cell" data-index="5"></div>
-      <div class="cell" data-index="6"></div>
-      <div class="cell" data-index="7"></div>
-      <div class="cell" data-index="8"></div>
-    </div>
-    
-    <div class="score-board">
-      <div class="score-box x">
-        <div>Player X</div>
-        <div class="score-value" id="scoreX">0</div>
-        <div class="player-indicator" id="playerX">-</div>
-      </div>
-      <div class="score-box">
-        <div>Draws</div>
-        <div class="score-value" id="scoreDraw">0</div>
-      </div>
-      <div class="score-box o">
-        <div>Player O</div>
-        <div class="score-value" id="scoreO">0</div>
-        <div class="player-indicator" id="playerO">-</div>
-      </div>
-    </div>
-    
-    <div class="status-container">
-      <div class="game-status" id="gameStatus">Game in progress</div>
-      <div class="player-turn x" id="playerTurn">Player X's turn</div>
-      <div class="controls">
-        <button onclick="resetGame()"><i class="fas fa-redo"></i> Reset Game</button>
-        <button class="secondary" onclick="leaveGame()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
-      </div>
-    </div>
-    
-    <div class="players-container">
-      <h3><i class="fas fa-users"></i> Party Players</h3>
-      <div class="player-list" id="playerList">
-        <!-- Players will be added here dynamically -->
-      </div>
-    </div>
-  </div>
+  <h1>Tic Tac Toe</h1>
+  <div id="status"></div>
 
   <script>
-    // Firebase config
+    // ✅ Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
       authDomain: "harshitjantaparty-77d46.firebaseapp.com",
       projectId: "harshitjantaparty-77d46",
     };
 
-    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.firestore();
 
-    // Game state variables
+    const status = document.getElementById("status");
+
     let currentUser = null;
     let currentParty = null;
-    let partyListener = null;
-    let gameListener = null;
-    let gameState = {
-      board: Array(9).fill(null),
-      currentPlayer: 'X',
-      gameStatus: 'playing',
-      playerX: null,
-      playerO: null,
-      scores: { X: 0, O: 0, draw: 0 },
-      winningCells: []
-    };
 
-    // DOM Elements
-    const gameBoard = document.getElementById('gameBoard');
-    const gameStatus = document.getElementById('gameStatus');
-    const playerTurn = document.getElementById('playerTurn');
-    const playerList = document.getElementById('playerList');
-    const partyCodeDisplay = document.getElementById('partyCodeDisplay');
-    const partyNameDisplay = document.getElementById('partyNameDisplay');
-    const playerCount = document.getElementById('playerCount');
-    const maxPlayers = document.getElementById('maxPlayers');
-    const scoreX = document.getElementById('scoreX');
-    const scoreO = document.getElementById('scoreO');
-    const scoreDraw = document.getElementById('scoreDraw');
-    const playerXIndicator = document.getElementById('playerX');
-    const playerOIndicator = document.getElementById('playerO');
-    const notification = document.getElementById('notification');
+    const urlParams = new URLSearchParams(window.location.search);
+    const partyCode = urlParams.get("partyCode");
+    const uidParam = urlParams.get("uid");
 
-    // Show notification
-    function showNotification(message) {
-      notification.textContent = message;
-      notification.style.display = 'block';
-      setTimeout(() => {
-        notification.style.display = 'none';
-      }, 3000);
+    if (!partyCode || !uidParam) {
+      redirect("Missing party info.");
     }
 
-    // Initialize the game
-    function initGame() {
-      // Get party code from URL
-      const urlParams = new URLSearchParams(window.location.search);
-      const partyCode = urlParams.get('partyCode');
-      const uid = urlParams.get('uid');
-      
-      if (!partyCode || !uid) {
-        showNotification('Missing parameters. Redirecting to lobby.');
-        setTimeout(() => window.location.href = 'index.html', 2000);
-        return;
-      }
-      
-      // Set up authentication
-      auth.onAuthStateChanged(user => {
-        if (user) {
-          currentUser = user;
-          loadParty(partyCode);
-        } else {
-          // Not authenticated - redirect to lobby
-          showNotification('Authentication failed. Redirecting to lobby.');
-          setTimeout(() => window.location.href = 'index.html', 2000);
+    auth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        status.innerText = "Signing you in...";
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          await auth.signInWithPopup(provider);
+        } catch (err) {
+          return redirect("Auth failed.");
         }
-      });
-      
-      // Set up game board
-      setupBoard();
-    }
-    
-    // Load party information
-    function loadParty(partyCode) {
-      partyListener = db.collection("parties").doc(partyCode).onSnapshot(doc => {
-        if (!doc.exists) {
-          showNotification('Party not found. Redirecting to lobby.');
-          setTimeout(() => window.location.href = 'index.html', 2000);
-          return;
-        }
-        
-        currentParty = doc.data();
-        
-        // Check if current user is in the party
-        const userInParty = currentParty.players.some(player => player.id === currentUser.uid);
-        if (!userInParty) {
-          showNotification('You are not in this party. Redirecting to lobby.');
-          setTimeout(() => window.location.href = 'index.html', 2000);
-          return;
-        }
-        
-        updatePartyUI();
-        
-        // Load game state
-        loadGameState(partyCode);
-        
-        // Assign players if needed
-        assignPlayers();
-      });
-    }
-    
-    // Load game state from Firestore
-    function loadGameState(partyCode) {
-      if (gameListener) gameListener();
-      
-      gameListener = db.collection("gameStates").doc(partyCode).onSnapshot(doc => {
-        if (doc.exists) {
-          const data = doc.data();
-          gameState = data;
-          updateGameUI();
-          updatePartyUI();
-        } else {
-          // Create new game state
-          createNewGame(partyCode);
-        }
-      });
-    }
-    
-    // Create new game state in Firestore
-    function createNewGame(partyCode) {
-      const newGameState = {
-        ...gameState,
-        partyCode: partyCode,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      };
-      
-      db.collection("gameStates").doc(partyCode).set(newGameState)
-        .then(() => {
-          gameState = newGameState;
-          updateGameUI();
-          assignPlayers();
-        });
-    }
-    
-    // Assign players to X and O roles
-    function assignPlayers() {
-      if (!currentParty || !gameState) return;
-      
-      // Only assign if game is in progress
-      if (gameState.gameStatus !== 'playing') return;
-      
-      // Get players who aren't assigned
-      const availablePlayers = currentParty.players.filter(player => 
-        player.id !== (gameState.playerX?.id || '') && 
-        player.id !== (gameState.playerO?.id || '')
-      );
-      
-      if (availablePlayers.length === 0) return;
-      
-      // Assign first available player to X if not assigned
-      if (!gameState.playerX) {
-        gameState.playerX = availablePlayers[0];
-      } 
-      // Then assign to O if not assigned
-      else if (!gameState.playerO && availablePlayers.length > 0) {
-        gameState.playerO = availablePlayers[0];
-      }
-      
-      // Update Firestore
-      updateGameState();
-    }
-    
-    // Update the game UI
-    function updateGameUI() {
-      // Update board
-      gameState.board.forEach((value, index) => {
-        const cell = document.querySelector(`.cell[data-index="${index}"]`);
-        cell.textContent = value || '';
-        cell.className = `cell ${value ? value.toLowerCase() : ''}`;
-        
-        // Add winning cell effect
-        if (gameState.winningCells.includes(index)) {
-          cell.classList.add('winning-cell');
-        } else {
-          cell.classList.remove('winning-cell');
-        }
-      });
-      
-      // Update status
-      if (gameState.gameStatus === 'playing') {
-        if (gameState.playerX && gameState.playerO) {
-          gameStatus.textContent = 'Game in progress';
-          playerTurn.textContent = `${gameState.currentPlayer}'s turn`;
-          playerTurn.className = `player-turn ${gameState.currentPlayer.toLowerCase()}`;
-        } else {
-          gameStatus.textContent = 'Waiting for players...';
-          playerTurn.textContent = `Need ${!gameState.playerX ? 'Player X' : 'Player O'}`;
-          playerTurn.className = 'player-turn';
-        }
-      } else if (gameState.gameStatus === 'X_won') {
-        gameStatus.textContent = 'Player X Wins!';
-        playerTurn.textContent = 'Game over';
-        playerTurn.className = 'player-turn';
-      } else if (gameState.gameStatus === 'O_won') {
-        gameStatus.textContent = 'Player O Wins!';
-        playerTurn.textContent = 'Game over';
-        playerTurn.className = 'player-turn';
-      } else if (gameState.gameStatus === 'draw') {
-        gameStatus.textContent = 'Game Draw!';
-        playerTurn.textContent = 'No winner';
-        playerTurn.className = 'player-turn';
-      }
-      
-      // Update scores
-      scoreX.textContent = gameState.scores.X;
-      scoreO.textContent = gameState.scores.O;
-      scoreDraw.textContent = gameState.scores.draw;
-      
-      // Update player indicators
-      playerXIndicator.textContent = gameState.playerX ? gameState.playerX.name : 'Not assigned';
-      playerOIndicator.textContent = gameState.playerO ? gameState.playerO.name : 'Not assigned';
-    }
-    
-    // Update party UI
-    function updatePartyUI() {
-      if (!currentParty) return;
-      
-      partyCodeDisplay.textContent = currentParty.code;
-      partyNameDisplay.textContent = currentParty.name;
-      playerCount.textContent = currentParty.players.length;
-      maxPlayers.textContent = currentParty.maxPlayers;
-      
-      // Update player list
-      playerList.innerHTML = '';
-      currentParty.players.forEach(player => {
-        const playerItem = document.createElement('div');
-        playerItem.className = 'player-item';
-        
-        const avatar = document.createElement('div');
-        avatar.className = 'player-avatar';
-        avatar.textContent = player.name.charAt(0);
-        
-        const name = document.createElement('div');
-        name.className = 'player-name';
-        name.textContent = player.name;
-        
-        const symbol = document.createElement('div');
-        symbol.className = 'player-symbol';
-        
-        if (gameState.playerX && player.id === gameState.playerX.id) {
-          symbol.textContent = 'X';
-          symbol.classList.add('x');
-        } else if (gameState.playerO && player.id === gameState.playerO.id) {
-          symbol.textContent = 'O';
-          symbol.classList.add('o');
-        }
-        
-        playerItem.appendChild(avatar);
-        playerItem.appendChild(name);
-        playerItem.appendChild(symbol);
-        playerList.appendChild(playerItem);
-      });
-    }
-    
-    // Set up the game board
-    function setupBoard() {
-      gameBoard.querySelectorAll('.cell').forEach(cell => {
-        cell.addEventListener('click', () => handleCellClick(cell));
-      });
-    }
-    
-    // Handle cell click
-    function handleCellClick(cell) {
-      if (gameState.gameStatus !== 'playing') {
-        showNotification("Game is not active!");
-        return;
-      }
-      
-      // Check if both players are assigned
-      if (!gameState.playerX || !gameState.playerO) {
-        showNotification("Waiting for another player to join...");
-        return;
-      }
-      
-      const index = parseInt(cell.getAttribute('data-index'));
-      
-      // Check if cell is empty
-      if (gameState.board[index] !== null) {
-        showNotification("This cell is already taken!");
-        return;
-      }
-      
-      // Check if it's current player's turn
-      if (gameState.currentPlayer === 'X' && currentUser.uid !== gameState.playerX.id) {
-        showNotification("It's not your turn!");
-        return;
-      }
-      
-      if (gameState.currentPlayer === 'O' && currentUser.uid !== gameState.playerO.id) {
-        showNotification("It's not your turn!");
-        return;
-      }
-      
-      // Update board
-      gameState.board[index] = gameState.currentPlayer;
-      
-      // Check for winner
-      const winner = checkWinner();
-      if (winner) {
-        if (winner === 'X') {
-          gameState.gameStatus = 'X_won';
-          gameState.scores.X += 1;
-          showNotification("Player X wins!");
-        } else if (winner === 'O') {
-          gameState.gameStatus = 'O_won';
-          gameState.scores.O += 1;
-          showNotification("Player O wins!");
-        }
-      } 
-      // Check for draw
-      else if (isBoardFull()) {
-        gameState.gameStatus = 'draw';
-        gameState.scores.draw += 1;
-        showNotification("It's a draw!");
-      } 
-      // Continue game
-      else {
-        gameState.currentPlayer = gameState.currentPlayer === 'X' ? 'O' : 'X';
-      }
-      
-      // Update Firestore
-      updateGameState();
-    }
-    
-    // Check if board is full
-    function isBoardFull() {
-      return gameState.board.every(cell => cell !== null);
-    }
-    
-    // Check for winner
-    function checkWinner() {
-      const winPatterns = [
-        [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
-        [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
-        [0, 4, 8], [2, 4, 6]             // diagonals
-      ];
-      
-      for (const pattern of winPatterns) {
-        const [a, b, c] = pattern;
-        if (
-          gameState.board[a] && 
-          gameState.board[a] === gameState.board[b] && 
-          gameState.board[a] === gameState.board[c]
-        ) {
-          gameState.winningCells = pattern;
-          return gameState.board[a];
-        }
-      }
-      
-      gameState.winningCells = [];
-      return null;
-    }
-    
-    // Update game state in Firestore
-    function updateGameState() {
-      db.collection("gameStates").doc(currentParty.code).update(gameState)
-        .catch(error => {
-          console.error("Error updating game state: ", error);
-        });
-    }
-    
-    // Reset the game
-    function resetGame() {
-      // Only host can reset the game
-      if (currentUser.uid !== currentParty.hostId) {
-        showNotification('Only the host can reset the game!');
-        return;
-      }
-      
-      gameState.board = Array(9).fill(null);
-      gameState.currentPlayer = 'X';
-      gameState.gameStatus = 'playing';
-      gameState.winningCells = [];
-      
-      // Rotate players if both are present
-      if (gameState.playerX && gameState.playerO) {
-        const temp = gameState.playerX;
-        gameState.playerX = gameState.playerO;
-        gameState.playerO = temp;
-      }
-      
-      updateGameState();
-      showNotification('Game reset!');
-    }
-    
-    // Leave the game and return to lobby
-    function leaveGame() {
-      if (!currentParty || !currentUser) {
-        window.location.href = 'index.html';
-        return;
-      }
-      
-      const userData = { id: currentUser.uid, name: currentUser.displayName };
-      
-      if (currentUser.uid === currentParty.hostId) {
-        // Host leaves: delete party and game state
-        db.collection("parties").doc(currentParty.code).delete()
-          .then(() => {
-            db.collection("gameStates").doc(currentParty.code).delete().catch(() => {});
-            cleanupAndRedirect();
-            showNotification('Party deleted!');
-          })
-          .catch(error => {
-            console.error("Error deleting party: ", error);
-            cleanupAndRedirect();
-          });
       } else {
-        // Non-host: remove from party and update game state
-        db.collection("parties").doc(currentParty.code).update({
-          players: firebase.firestore.FieldValue.arrayRemove(userData)
-        })
-        .then(() => {
-          // Remove from game state if assigned
-          if (gameState.playerX && currentUser.uid === gameState.playerX.id) {
-            gameState.playerX = null;
+        currentUser = user;
+        checkParty();
+      }
+    });
+
+    function redirect(message) {
+      status.innerText = message;
+      setTimeout(() => window.location.href = "index.html", 2000);
+    }
+
+    async function checkParty() {
+      try {
+        const partyRef = db.collection("parties").doc(partyCode);
+        const partySnap = await partyRef.get();
+
+        if (!partySnap.exists) return redirect("Party not found.");
+
+        currentParty = partySnap.data();
+        const playerExists = currentParty.players.some(p => p.id === currentUser.uid);
+
+        if (!playerExists) {
+          // Try to auto-join if room is available
+          if (currentParty.players.length < currentParty.maxPlayers) {
+            const newPlayer = { id: currentUser.uid, name: currentUser.displayName };
+            await partyRef.update({
+              players: firebase.firestore.FieldValue.arrayUnion(newPlayer)
+            });
+            status.innerText = "Joined party successfully!";
+          } else {
+            return redirect("Party is full.");
           }
-          if (gameState.playerO && currentUser.uid === gameState.playerO.id) {
-            gameState.playerO = null;
-          }
-          updateGameState();
-          cleanupAndRedirect();
-          showNotification('Left party!');
-        })
-        .catch(error => {
-          console.error("Error leaving party: ", error);
-          cleanupAndRedirect();
-        });
+        } else {
+          status.innerText = "Player already in party. Loading game...";
+        }
+
+        // ✅ Now load the actual game UI or redirect to main game logic
+        window.location.href = `tictactoe_game.html?partyCode=${partyCode}&uid=${currentUser.uid}`;
+      } catch (err) {
+        console.error(err);
+        redirect("Error joining party.");
       }
     }
-    
-    function cleanupAndRedirect() {
-      if (partyListener) partyListener();
-      if (gameListener) gameListener();
-      window.location.href = 'index.html';
-    }
-    
-    // Initialize the game when page loads
-    window.onload = initGame;
   </script>
 </body>
 </html>
