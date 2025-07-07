@@ -697,7 +697,15 @@
 
     function listenToPartyUpdates(code) {
       partyListener = db.collection("parties").doc(code).onSnapshot(doc => {
-        if (!doc.exists) return leaveParty();
+        if (!doc.exists) {
+          showNotification('Party deleted. Redirecting to lobby.');
+          setTimeout(() => {
+            cleanupAfterLeave();
+            window.location.href = 'index.html';
+          }, 2000);
+          return;
+        }
+        
         currentParty = doc.data();
         updateLobbyUI(currentParty);
         
