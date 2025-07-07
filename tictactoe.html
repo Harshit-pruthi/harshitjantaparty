@@ -9,7 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <style>
+   <style>
     * {
       margin: 0;
       padding: 0;
@@ -355,6 +355,59 @@
       margin: 15px 0;
       text-align: center;
     }
+    
+    .tournament-container {
+      background: rgba(0, 0, 0, 0.6);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 0 15px rgba(0, 217, 255, 0.4);
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 20px;
+    }
+    
+    .tournament-container h3 {
+      text-align: center;
+      margin-bottom: 15px;
+      color: #00d9ff;
+    }
+    
+    .tournament-round {
+      margin-bottom: 15px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+    }
+    
+    .match {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px;
+      margin: 5px 0;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 5px;
+    }
+    
+    .match.winner {
+      background: rgba(0, 255, 0, 0.1);
+      border: 1px solid #0f0;
+    }
+    
+    .current-match {
+      background: rgba(0, 217, 255, 0.2);
+      border: 1px solid #00d9ff;
+    }
+    
+    .afk-warning {
+      color: #ffcc00;
+      animation: blink 1s infinite;
+    }
+    
+    @keyframes blink {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
   </style>
 </head>
 <body>
@@ -370,6 +423,11 @@
   </div>
 
   <div class="game-container">
+    <div class="tournament-container" id="tournamentContainer" style="display: none;">
+      <h3><i class="fas fa-trophy"></i> Tournament Bracket</h3>
+      <div id="tournamentBracket"></div>
+    </div>
+    
     <div class="game-board" id="gameBoard">
       <div class="cell" data-index="0"></div>
       <div class="cell" data-index="1"></div>
@@ -434,6 +492,7 @@
     let currentParty = null;
     let partyListener = null;
     let gameListener = null;
+    let afkTimers = {};
     let gameState = {
       board: Array(9).fill(null),
       currentPlayer: 'X',
@@ -441,7 +500,14 @@
       playerX: null,
       playerO: null,
       scores: { X: 0, O: 0, draw: 0 },
-      winningCells: []
+      winningCells: [],
+      tournament: {
+        rounds: [],
+        currentRound: 0,
+        currentMatch: 0
+      },
+      lastMoveTime: null,
+      afkPlayers: []
     };
 
     // DOM Elements
@@ -459,6 +525,8 @@
     const playerXIndicator = document.getElementById('playerX');
     const playerOIndicator = document.getElementById('playerO');
     const notification = document.getElementById('notification');
+    const tournamentContainer = document.getElementById('tournamentContainer');
+    const tournamentBracket = document.getElementById('tournamentBracket');
 
     // Show notification
     function showNotification(message) {
@@ -515,11 +583,58 @@
         
         // Assign players if needed
         assignPlayers();
-      }, error => {
-        console.error("Error loading party: ", error);
-        showNotification('Error loading party. Redirecting to lobby.');
-        setTimeout(() => window.location.href = 'index.html', 2000);
+        
+        // Setup AFK monitoring
+        setupAFKMonitoring();
       });
+    }
+    
+    // Setup AFK monitoring
+    function setupAFKMonitoring() {
+      // Clear existing timers
+      clearAFKTimers();
+      
+      // Setup AFK timers for each player
+      currentParty.players.forEach(player => {
+        afkTimers[player.id] = setTimeout(() => {
+          markPlayerAFK(player);
+        }, 5 * 60 * 1000); // 5 minutes
+      });
+    }
+    
+    // Clear all AFK timers
+    function clearAFKTimers() {
+      Object.values(afkTimers).forEach(timer => clearTimeout(timer));
+      afkTimers = {};
+    }
+    
+    // Mark player as AFK
+    function markPlayerAFK(player) {
+      if (!currentParty || !player) return;
+      
+      // Add to AFK list
+      if (!gameState.afkPlayers.includes(player.id)) {
+        gameState.afkPlayers.push(player.id);
+        updateGameState();
+      }
+      
+      // Remove player from party
+      db.collection("parties").doc(currentParty.code).update({
+        players: firebase.firestore.FieldValue.arrayRemove(player)
+      });
+      
+      showNotification(`${player.name} was kicked for being AFK!`);
+    }
+    
+    // Reset AFK timer for player
+    function resetAFKTimer(playerId) {
+      if (afkTimers[playerId]) {
+        clearTimeout(afkTimers[playerId]);
+        afkTimers[playerId] = setTimeout(() => {
+          const player = currentParty.players.find(p => p.id === playerId);
+          if (player) markPlayerAFK(player);
+        }, 5 * 60 * 1000);
+      }
     }
     
     // Load game state from Firestore
@@ -530,12 +645,89 @@
         if (doc.exists) {
           const data = doc.data();
           gameState = data;
+          
+          // Initialize tournament if needed
+          if (gameState.tournament.rounds.length === 0 && currentParty.players.length >= 2) {
+            setupTournament();
+          }
+          
           updateGameUI();
           updatePartyUI();
+          updateTournamentUI();
         } else {
           // Create new game state
           createNewGame(partyCode);
         }
+      });
+    }
+    
+    // Setup tournament structure
+    function setupTournament() {
+      const playerCount = currentParty.players.length;
+      gameState.tournament = {
+        rounds: [],
+        currentRound: 0,
+        currentMatch: 0
+      };
+      
+      // Create first round matches
+      const firstRoundMatches = [];
+      const shuffledPlayers = [...currentParty.players].sort(() => Math.random() - 0.5);
+      
+      // Create matches for 2, 4, or 8 players
+      for (let i = 0; i < shuffledPlayers.length; i += 2) {
+        if (i + 1 < shuffledPlayers.length) {
+          firstRoundMatches.push({
+            player1: shuffledPlayers[i],
+            player2: shuffledPlayers[i + 1],
+            winner: null
+          });
+        }
+      }
+      
+      gameState.tournament.rounds.push(firstRoundMatches);
+      updateGameState();
+    }
+    
+    // Update tournament UI
+    function updateTournamentUI() {
+      if (currentParty.players.length < 4) {
+        tournamentContainer.style.display = 'none';
+        return;
+      }
+      
+      tournamentContainer.style.display = 'block';
+      tournamentBracket.innerHTML = '';
+      
+      gameState.tournament.rounds.forEach((round, roundIndex) => {
+        const roundElement = document.createElement('div');
+        roundElement.className = 'tournament-round';
+        roundElement.innerHTML = `<h4>Round ${roundIndex + 1}</h4>`;
+        
+        round.forEach((match, matchIndex) => {
+          const matchElement = document.createElement('div');
+          matchElement.className = 'match';
+          
+          if (roundIndex === gameState.tournament.currentRound && 
+              matchIndex === gameState.tournament.currentMatch) {
+            matchElement.classList.add('current-match');
+          }
+          
+          if (match.winner) {
+            matchElement.classList.add('winner');
+          }
+          
+          matchElement.innerHTML = `
+            <div>${match.player1?.name || 'TBD'}</div>
+            <div>VS</div>
+            <div>${match.player2?.name || 'TBD'}</div>
+            ${match.winner ? `<div>Winner: ${match.winner.name}</div>` : ''}
+          `;
+          
+          roundElement.appendChild(matchElement);
+        });
+        
+        tournamentBracket.appendChild(roundElement);
       });
     }
     
@@ -552,10 +744,6 @@
           gameState = newGameState;
           updateGameUI();
           assignPlayers();
-        })
-        .catch(error => {
-          console.error("Error creating game state: ", error);
-          showNotification('Error creating game. Please try again.');
         });
     }
     
@@ -569,18 +757,37 @@
       // Get players who aren't assigned
       const availablePlayers = currentParty.players.filter(player => 
         player.id !== (gameState.playerX?.id || '') && 
-        player.id !== (gameState.playerO?.id || '')
+        player.id !== (gameState.playerO?.id || '') &&
+        !gameState.afkPlayers.includes(player.id)
       );
       
       if (availablePlayers.length === 0) return;
       
-      // Assign first available player to X if not assigned
-      if (!gameState.playerX) {
-        gameState.playerX = availablePlayers[0];
+      // For tournaments, assign players from current match
+      if (gameState.tournament.rounds.length > 0) {
+        const currentRound = gameState.tournament.rounds[gameState.tournament.currentRound];
+        if (currentRound && currentRound[gameState.tournament.currentMatch]) {
+          const match = currentRound[gameState.tournament.currentMatch];
+          
+          if (!gameState.playerX && match.player1) {
+            gameState.playerX = match.player1;
+          }
+          
+          if (!gameState.playerO && match.player2) {
+            gameState.playerO = match.player2;
+          }
+        }
       } 
-      // Then assign to O if not assigned
-      else if (!gameState.playerO && availablePlayers.length > 0) {
-        gameState.playerO = availablePlayers[0];
+      // For non-tournament games
+      else {
+        // Assign first available player to X if not assigned
+        if (!gameState.playerX) {
+          gameState.playerX = availablePlayers[0];
+        } 
+        // Then assign to O if not assigned
+        else if (!gameState.playerO && availablePlayers.length > 0) {
+          gameState.playerO = availablePlayers[0];
+        }
       }
       
       // Update Firestore
@@ -653,6 +860,10 @@
         const playerItem = document.createElement('div');
         playerItem.className = 'player-item';
         
+        if (gameState.afkPlayers.includes(player.id)) {
+          playerItem.classList.add('afk-warning');
+        }
+        
         const avatar = document.createElement('div');
         avatar.className = 'player-avatar';
         avatar.textContent = player.name.charAt(0);
@@ -718,8 +929,12 @@
         return;
       }
       
+      // Reset AFK timer for current player
+      resetAFKTimer(currentUser.uid);
+      
       // Update board
       gameState.board[index] = gameState.currentPlayer;
+      gameState.lastMoveTime = firebase.firestore.Timestamp.now();
       
       // Check for winner
       const winner = checkWinner();
@@ -728,10 +943,20 @@
           gameState.gameStatus = 'X_won';
           gameState.scores.X += 1;
           showNotification("Player X wins!");
+          
+          // For tournaments, record winner
+          if (gameState.tournament.rounds.length > 0) {
+            recordMatchWinner(gameState.playerX);
+          }
         } else if (winner === 'O') {
           gameState.gameStatus = 'O_won';
           gameState.scores.O += 1;
           showNotification("Player O wins!");
+          
+          // For tournaments, record winner
+          if (gameState.tournament.rounds.length > 0) {
+            recordMatchWinner(gameState.playerO);
+          }
         }
       } 
       // Check for draw
@@ -739,6 +964,11 @@
         gameState.gameStatus = 'draw';
         gameState.scores.draw += 1;
         showNotification("It's a draw!");
+        
+        // For tournaments, move to next match
+        if (gameState.tournament.rounds.length > 0) {
+          advanceTournament(null);
+        }
       } 
       // Continue game
       else {
@@ -746,6 +976,74 @@
       }
       
       // Update Firestore
+      updateGameState();
+    }
+    
+    // Record tournament match winner
+    function recordMatchWinner(winner) {
+      if (gameState.tournament.rounds.length === 0) return;
+      
+      const currentRound = gameState.tournament.currentRound;
+      const currentMatch = gameState.tournament.currentMatch;
+      
+      if (gameState.tournament.rounds[currentRound] && 
+          gameState.tournament.rounds[currentRound][currentMatch]) {
+        gameState.tournament.rounds[currentRound][currentMatch].winner = winner;
+      }
+      
+      advanceTournament(winner);
+    }
+    
+    // Advance to next tournament match
+    function advanceTournament(winner) {
+      const currentRound = gameState.tournament.currentRound;
+      const currentMatch = gameState.tournament.currentMatch;
+      
+      // Check if there are more matches in this round
+      if (currentMatch < gameState.tournament.rounds[currentRound].length - 1) {
+        gameState.tournament.currentMatch++;
+      } 
+      // Otherwise, move to next round
+      else {
+        // Create next round if needed
+        if (gameState.tournament.rounds.length - 1 === currentRound) {
+          const winners = gameState.tournament.rounds[currentRound].map(match => match.winner);
+          if (winners.filter(w => w).length > 1) {
+            const nextRound = [];
+            for (let i = 0; i < winners.length; i += 2) {
+              if (i + 1 < winners.length) {
+                nextRound.push({
+                  player1: winners[i],
+                  player2: winners[i + 1],
+                  winner: null
+                });
+              }
+            }
+            gameState.tournament.rounds.push(nextRound);
+            gameState.tournament.currentRound++;
+            gameState.tournament.currentMatch = 0;
+          }
+        } 
+        // Already have next round
+        else if (gameState.tournament.rounds.length > currentRound + 1) {
+          gameState.tournament.currentRound++;
+          gameState.tournament.currentMatch = 0;
+        }
+      }
+      
+      // Reset game for next match
+      resetGameForNextMatch();
+    }
+    
+    // Reset game for next match
+    function resetGameForNextMatch() {
+      gameState.board = Array(9).fill(null);
+      gameState.currentPlayer = 'X';
+      gameState.gameStatus = 'playing';
+      gameState.winningCells = [];
+      gameState.playerX = null;
+      gameState.playerO = null;
+      
       updateGameState();
     }
     
@@ -775,10 +1073,10 @@
     
     // Update game state in Firestore
     function updateGameState() {
-      db.collection("gameStates").doc(currentParty.code).update(gameState)
+      db.collection("gameStates").doc(currentParty.code).set(gameState, { merge: true })
         .catch(error => {
           console.error("Error updating game state: ", error);
-          showNotification("Error updating game. Please try again.");
+          showNotification("Error updating game, please try again");
         });
     }
     
@@ -852,6 +1150,7 @@
     }
     
     function cleanupAndRedirect() {
+      clearAFKTimers();
       if (partyListener) partyListener();
       if (gameListener) gameListener();
       window.location.href = 'index.html';
