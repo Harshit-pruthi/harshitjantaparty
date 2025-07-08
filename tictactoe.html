@@ -422,9 +422,9 @@
       }, 3000);
     }
     
-    // Go back to lobby
+    // Go back to lobby - FIXED: Redirect without parameters
     function goBackToLobby() {
-      window.location.href = `index.html?partyCode=${partyCode}&uid=${userId}`;
+      window.location.href = "index.html";
     }
     
     // Initialize the game
