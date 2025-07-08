@@ -1,28 +1,55 @@
+<!-- Save as tictactoe.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tic Tac Toe Tournament</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Oxanium:wght@400;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8">
+  <title>Tic Tac Toe</title>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
-    body { background: #1a1a40; color: #fff; font-family: 'Oxanium', sans-serif; text-align: center; padding: 20px; }
-    .board { display: grid; grid-template-columns: repeat(3, 100px); grid-gap: 10px; margin: 20px auto; }
-    .cell { width: 100px; height: 100px; font-size: 3em; display: flex; align-items: center; justify-content: center; background: #270082; border-radius: 10px; cursor: pointer; }
-    .cell.taken { pointer-events: none; }
-    h1, h2 { color: #05d9e8; text-shadow: 0 0 5px #05d9e8; }
-    .status { margin-top: 20px; font-size: 1.2rem; color: #ff2a6d; }
-    .player-info { margin: 10px 0; }
+    body {
+      background: #0b0c1e;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding-top: 40px;
+    }
+    h1 {
+      color: #05d9e8;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(3, 100px);
+      grid-gap: 10px;
+      justify-content: center;
+      margin-top: 30px;
+    }
+    .cell {
+      width: 100px;
+      height: 100px;
+      background: #270082;
+      font-size: 48px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    .cell.taken {
+      pointer-events: none;
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 1.2em;
+      color: #ff2a6d;
+    }
   </style>
 </head>
 <body>
-  <h1><i class="fas fa-gamepad"></i> Tic Tac Toe Tournament</h1>
-  <h2 id="matchInfo"></h2>
+  <h1>Tic Tac Toe</h1>
+  <h2 id="matchTitle">Loading...</h2>
   <div class="board" id="board"></div>
-  <div class="status" id="status"></div>
+  <div id="status">Connecting...</div>
 
   <script>
     const firebaseConfig = {
@@ -37,124 +64,100 @@
     const urlParams = new URLSearchParams(window.location.search);
     const partyCode = urlParams.get('partyCode');
     const uid = urlParams.get('uid');
-    let playerName = "";
-    let currentMatch = null;
-    let boardRef = null;
-    let afkTimer = null;
 
-    function resetAFKTimer() {
-      clearTimeout(afkTimer);
-      afkTimer = setTimeout(() => {
-        db.collection("parties").doc(partyCode).update({
-          players: firebase.firestore.FieldValue.arrayRemove({ id: uid, name: playerName })
-        });
-        alert("You were removed due to inactivity.");
-        window.location.href = "/index.html";
-      }, 5 * 60 * 1000); // 5 minutes
-    }
+    let boardRef;
+    let playerMark = null;
+    let currentTurn = null;
+    let playerName = "";
+    let player1 = null, player2 = null;
 
     function createBoard(cells) {
-      const board = document.getElementById("board");
-      board.innerHTML = "";
-      cells.forEach((cell, index) => {
+      const boardDiv = document.getElementById("board");
+      boardDiv.innerHTML = "";
+      cells.forEach((cell, i) => {
         const div = document.createElement("div");
         div.className = "cell" + (cell ? " taken" : "");
-        div.textContent = cell;
-        div.onclick = () => makeMove(index);
-        board.appendChild(div);
+        div.textContent = cell || "";
+        div.addEventListener("click", () => makeMove(i));
+        boardDiv.appendChild(div);
       });
     }
 
-    async function initGame() {
-      const partyDoc = await db.collection("parties").doc(partyCode).get();
-      const partyData = partyDoc.data();
-      const allPlayers = partyData.players;
-      playerName = allPlayers.find(p => p.id === uid)?.name || "";
+    async function makeMove(index) {
+      const snapshot = await boardRef.get();
+      const data = snapshot.data();
+      if (data.winner || data.cells[index] || data.turn !== playerMark) return;
 
-      // Get or create tournament structure
-      const matchDocRef = db.collection("parties").doc(partyCode).collection("tournament").doc("currentMatch");
-      const matchDoc = await matchDocRef.get();
+      const newCells = [...data.cells];
+      newCells[index] = playerMark;
+      const winner = checkWinner(newCells);
 
-      if (!matchDoc.exists) {
-        const playersShuffled = allPlayers.sort(() => Math.random() - 0.5);
-        const matches = [];
-        for (let i = 0; i < playersShuffled.length; i += 2) {
-          matches.push({ p1: playersShuffled[i], p2: playersShuffled[i + 1] });
-        }
-        await matchDocRef.set({ round: 1, matches, current: 0 });
-      }
-
-      matchDocRef.onSnapshot((snap) => {
-        const data = snap.data();
-        const { p1, p2 } = data.matches[data.current];
-        if (!p1 || !p2) return;
-
-        document.getElementById("matchInfo").innerText = `${p1.name} vs ${p2.name}`;
-
-        if (uid !== p1.id && uid !== p2.id) {
-          document.getElementById("status").innerText = "Spectating...";
-          return;
-        }
-
-        currentMatch = { p1, p2, me: uid === p1.id ? "X" : "O" };
-        resetAFKTimer();
-
-        boardRef = db.collection("parties").doc(partyCode).collection("board").doc(`match_${data.round}_${data.current}`);
-        boardRef.get().then(doc => {
-          if (!doc.exists) {
-            boardRef.set({ cells: Array(9).fill(null), turn: "X", winner: null });
-          }
-        });
-
-        boardRef.onSnapshot(doc => {
-          const game = doc.data();
-          createBoard(game.cells);
-          if (game.winner) {
-            document.getElementById("status").innerText = `${game.winner} Wins!`;
-            setTimeout(() => {
-              // Progress to next round logic here (to be continued...)
-            }, 3000);
-            return;
-          }
-
-          const turnStatus = game.turn === currentMatch.me ? "Your Turn" : "Opponent's Turn";
-          document.getElementById("status").innerText = turnStatus;
-        });
-      });
-    }
-
-    function makeMove(index) {
-      resetAFKTimer();
-      boardRef.get().then(doc => {
-        const data = doc.data();
-        if (data.winner || data.cells[index]) return;
-        if (data.turn !== currentMatch.me) return;
-
-        const newCells = [...data.cells];
-        newCells[index] = data.turn;
-        const winner = checkWinner(newCells);
-
-        boardRef.set({
-          cells: newCells,
-          turn: data.turn === "X" ? "O" : "X",
-          winner
-        });
+      boardRef.set({
+        cells: newCells,
+        turn: playerMark === "X" ? "O" : "X",
+        winner
       });
     }
 
     function checkWinner(cells) {
-      const lines = [
-        [0,1,2],[3,4,5],[6,7,8],
-        [0,3,6],[1,4,7],[2,5,8],
-        [0,4,8],[2,4,6]
-      ];
-      for (let [a,b,c] of lines) {
+      const wins = [[0,1,2],[3,4,5],[6,7,8],
+                    [0,3,6],[1,4,7],[2,5,8],
+                    [0,4,8],[2,4,6]];
+      for (const [a,b,c] of wins) {
         if (cells[a] && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
       }
       return null;
     }
 
-    initGame();
+    async function initGame() {
+      const partyDoc = await db.collection("parties").doc(partyCode).get();
+      const partyData = partyDoc.data();
+      const players = partyData.players || [];
+
+      if (players.length < 2) {
+        document.getElementById("matchTitle").textContent = "Waiting for 2 players...";
+        return;
+      }
+
+      player1 = players[0];
+      player2 = players[1];
+      playerMark = uid === player1.id ? "X" : uid === player2.id ? "O" : null;
+
+      if (!playerMark) {
+        document.getElementById("matchTitle").textContent = "Spectating Match";
+        document.getElementById("status").textContent = "You are not playing.";
+        return;
+      }
+
+      document.getElementById("matchTitle").textContent = `${player1.name} (X) vs ${player2.name} (O)`;
+
+      boardRef = db.collection("parties").doc(partyCode).collection("games").doc("tictactoe");
+      const boardSnap = await boardRef.get();
+      if (!boardSnap.exists) {
+        await boardRef.set({
+          cells: Array(9).fill(null),
+          turn: "X",
+          winner: null
+        });
+      }
+
+      boardRef.onSnapshot(doc => {
+        const data = doc.data();
+        createBoard(data.cells);
+        if (data.winner) {
+          document.getElementById("status").textContent = `${data.winner} wins!`;
+        } else if (data.cells.every(c => c)) {
+          document.getElementById("status").textContent = "It's a draw!";
+        } else {
+          document.getElementById("status").textContent = data.turn === playerMark ? "Your turn" : "Opponent's turn";
+        }
+      });
+    }
+
+    initGame().catch(err => {
+      console.error("Error:", err);
+      document.getElementById("status").textContent = "Error loading game.";
+    });
   </script>
 </body>
 </html>
