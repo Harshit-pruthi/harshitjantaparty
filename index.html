@@ -584,6 +584,11 @@
       cards: "A strategic card battle game. Build your deck and challenge other players in exciting duels."
     };
 
+    // In the startGame() function in index.html
+if (selectedGame === 'quickdraw') {
+  window.location.href = `quickdraw.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
+}
+
     // Show notification function
     function showNotification(message) {
       const notification = document.getElementById('notification');
