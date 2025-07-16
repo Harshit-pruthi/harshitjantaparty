@@ -509,24 +509,24 @@
       <p>Choose a game to play with your party members</p>
       
       <div class="game-grid">
-        <div class="game-card" onclick="selectGame('tictactoe')">
-          <i class="fas fa-times game-icon"></i>
-          <span class="game-title">Tic Tac Toe</span>
+        <div class="game-card" onclick="selectGame('quickdraw')">
+          <i class="fas fa-bolt game-icon"></i>
+          <span class="game-title">Quick Draw</span>
         </div>
         
-        <div class="game-card" onclick="selectGame('rps')">
-          <i class="fas fa-hand-rock game-icon"></i>
-          <span class="game-title">Rock Paper Scissors</span>
+        <div class="game-card" onclick="selectGame('wordrace')">
+          <i class="fas fa-keyboard game-icon"></i>
+          <span class="game-title">Word Race</span>
         </div>
         
-        <div class="game-card" onclick="selectGame('trivia')">
-          <i class="fas fa-question-circle game-icon"></i>
-          <span class="game-title">Trivia Challenge</span>
+        <div class="game-card" onclick="selectGame('numbercrunch')">
+          <i class="fas fa-calculator game-icon"></i>
+          <span class="game-title">Number Crunch</span>
         </div>
         
-        <div class="game-card" onclick="selectGame('cards')">
-          <i class="fas fa-cards game-icon"></i>
-          <span class="game-title">Card Battle</span>
+        <div class="game-card" onclick="selectGame('puzzlebattle')">
+          <i class="fas fa-puzzle-piece game-icon"></i>
+          <span class="game-title">Puzzle Battle</span>
         </div>
       </div>
       
@@ -578,16 +578,11 @@
     let partyListener = null;
     let selectedGame = null;
     const gameDescriptions = {
-      tictactoe: "Classic Tic Tac Toe game. Play against other players in your lobby in this timeless strategy game.",
-      rps: "Rock, Paper, Scissors! Challenge your friends to the ultimate hand game. Best of three wins!",
-      trivia: "Test your knowledge with trivia questions on various topics. Compete to see who knows the most!",
-      cards: "A strategic card battle game. Build your deck and challenge other players in exciting duels."
+      quickdraw: "Test your reflexes in this fast-paced drawing game! Players compete to draw prompts faster and more accurately than their opponents.",
+      wordrace: "Race against time and opponents to form as many words as possible from a set of letters. The fastest word master wins!",
+      numbercrunch: "A mathematical challenge where players solve equations against the clock. Perfect for number lovers and quick thinkers.",
+      puzzlebattle: "Collaborate or compete to solve intricate puzzles. Piece together clues faster than your opponents to claim victory."
     };
-
-    // In the startGame() function in index.html
-if (selectedGame === 'quickdraw') {
-  window.location.href = `quickdraw.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-}
 
     // Show notification function
     function showNotification(message) {
@@ -702,24 +697,14 @@ if (selectedGame === 'quickdraw') {
 
     function listenToPartyUpdates(code) {
       partyListener = db.collection("parties").doc(code).onSnapshot(doc => {
-        if (!doc.exists) {
-          showNotification('Party deleted. Redirecting to lobby.');
-          setTimeout(() => {
-            cleanupAfterLeave();
-            window.location.href = 'index.html';
-          }, 2000);
-          return;
-        }
-        
+        if (!doc.exists) return leaveParty();
         currentParty = doc.data();
         updateLobbyUI(currentParty);
         
         // Check if host started a game
         if (currentParty.currentGame) {
-          if (currentParty.currentGame === 'tictactoe') {
-            // Redirect to Tic Tac Toe game
-            window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-          }
+          // Redirect to game page
+          window.location.href = `${currentParty.currentGame}.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
         }
       });
     }
@@ -844,9 +829,7 @@ if (selectedGame === 'quickdraw') {
       }).then(() => {
         showNotification(`Starting ${selectedGame} game...`);
         // Redirect to game page
-        if (selectedGame === 'tictactoe') {
-          window.location.href = `tictactoe.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-        }
+        window.location.href = `${selectedGame}.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
       });
     }
 
