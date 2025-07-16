@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Draw - Multiplayer Game</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
   <style>
     * {
       margin: 0;
@@ -462,7 +465,7 @@
     <div class="game-header">
       <h1><i class="fas fa-bolt"></i> QUICK DRAW</h1>
       <p>Race against your friends to draw the prompt before time runs out!</p>
-      <p>Lobby: <strong>QUICK-789</strong> | Players: <strong>4/8</strong></p>
+      <p>Lobby: <strong id="lobbyCodeDisplay">QUICK-789</strong> | Players: <strong id="playersCount">1/8</strong></p>
     </div>
 
     <div class="game-content">
@@ -491,26 +494,7 @@
         <div class="player-list">
           <h2><i class="fas fa-users"></i> Players</h2>
           <ul id="players">
-            <li>
-              <div class="player-avatar">Y</div>
-              <div class="player-name">You</div>
-              <div class="player-score">120</div>
-            </li>
-            <li>
-              <div class="player-avatar">S</div>
-              <div class="player-name">Sarah</div>
-              <div class="player-score">90</div>
-            </li>
-            <li>
-              <div class="player-avatar">M</div>
-              <div class="player-name">Mike</div>
-              <div class="player-score">75</div>
-            </li>
-            <li>
-              <div class="player-avatar">J</div>
-              <div class="player-name">John</div>
-              <div class="player-score">60</div>
-            </li>
+            <!-- Players will be added here dynamically -->
           </ul>
         </div>
 
@@ -519,21 +503,6 @@
           <div id="messages">
             <div class="message system">
               Welcome to Quick Draw! The game will start soon.
-            </div>
-            <div class="message other">
-              <div class="sender">Sarah</div>
-              <div class="text">Ready to draw!</div>
-            </div>
-            <div class="message self">
-              <div class="sender">You</div>
-              <div class="text">Let's do this! 🎨</div>
-            </div>
-            <div class="message other">
-              <div class="sender">Mike</div>
-              <div class="text">What's the first prompt?</div>
-            </div>
-            <div class="message system">
-              Round starting in 10 seconds...
             </div>
           </div>
           <div class="chat-input">
@@ -556,14 +525,29 @@
   <div class="winner-banner" id="winnerBanner" style="display: none;">
     <h2>Round Winner!</h2>
     <i class="fas fa-trophy" style="font-size: 4rem; color: #ffcc00;"></i>
-    <div class="winner-name">Sarah</div>
-    <p>Successfully guessed "Dog" in 18 seconds!</p>
+    <div class="winner-name" id="winnerName">Player</div>
+    <p id="winnerMessage">Successfully guessed "Dog" in 18 seconds!</p>
     <button class="game-btn" id="nextRoundBtn"><i class="fas fa-redo"></i> Next Round</button>
   </div>
   
   <div class="overlay" id="overlay" style="display: none;"></div>
 
   <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
+      authDomain: "harshitjantaparty-77d46.firebaseapp.com",
+      projectId: "harshitjantaparty-77d46",
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // Get URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const partyCode = urlParams.get('partyCode');
+    const uid = urlParams.get('uid');
+
     // Game state
     const gameState = {
       isDrawing: false,
@@ -574,12 +558,7 @@
       timer: 60,
       timerInterval: null,
       score: 0,
-      players: [
-        { id: 1, name: 'You', score: 120, isHost: true },
-        { id: 2, name: 'Sarah', score: 90 },
-        { id: 3, name: 'Mike', score: 75 },
-        { id: 4, name: 'John', score: 60 }
-      ],
+      players: [],
       prompts: ['Dog', 'Cat', 'House', 'Car', 'Tree', 'Sun', 'Mountain', 'River', 'Boat', 'Book'],
       currentPrompt: 'Dog'
     };
@@ -603,6 +582,10 @@
     const winnerBanner = document.getElementById('winnerBanner');
     const overlay = document.getElementById('overlay');
     const nextRoundBtn = document.getElementById('nextRoundBtn');
+    const winnerName = document.getElementById('winnerName');
+    const winnerMessage = document.getElementById('winnerMessage');
+    const lobbyCodeDisplay = document.getElementById('lobbyCodeDisplay');
+    const playersCount = document.getElementById('playersCount');
 
     // Set canvas background to white
     ctx.fillStyle = '#FFFFFF';
@@ -613,6 +596,52 @@
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeStyle = gameState.currentColor;
+
+    // Display lobby code
+    lobbyCodeDisplay.textContent = partyCode;
+
+    // Listen to party updates
+    let partyListener = null;
+    let currentUser = null;
+
+    function initializeGame() {
+      // Listen to the party document
+      partyListener = db.collection("parties").doc(partyCode)
+        .onSnapshot(doc => {
+          if (doc.exists) {
+            const party = doc.data();
+            gameState.players = party.players;
+            updatePlayerList();
+            playersCount.textContent = `${gameState.players.length}/${party.maxPlayers}`;
+            
+            // Set current user
+            currentUser = gameState.players.find(p => p.id === uid);
+            
+            // Check if game has started
+            if (party.currentGameData) {
+              gameState.currentPrompt = party.currentGameData.currentPrompt;
+              gameState.isMyTurn = party.currentGameData.currentDrawer === uid;
+              promptElement.textContent = gameState.currentPrompt;
+              
+              // If it's not my turn, hide the prompt
+              if (!gameState.isMyTurn) {
+                promptElement.style.display = 'none';
+              } else {
+                promptElement.style.display = 'block';
+              }
+              
+              // Update timer
+              gameState.timer = party.currentGameData.timer;
+              timerElement.textContent = gameState.timer;
+              
+              // Start timer if not already running
+              if (party.currentGameData.status === 'drawing' && !gameState.timerInterval) {
+                startTimer();
+              }
+            }
+          }
+        });
+    }
 
     // Drawing functions
     function startDrawing(e) {
@@ -645,33 +674,6 @@
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDrawing);
     canvas.addEventListener('mouseout', stopDrawing);
-
-    // Touch events for mobile
-    canvas.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const mouseEvent = new MouseEvent('mousedown', {
-        clientX: touch.clientX,
-        clientY: touch.clientY
-      });
-      canvas.dispatchEvent(mouseEvent);
-    });
-
-    canvas.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-      const touch = e.touches[0];
-      const mouseEvent = new MouseEvent('mousemove', {
-        clientX: touch.clientX,
-        clientY: touch.clientY
-      });
-      canvas.dispatchEvent(mouseEvent);
-    });
-
-    canvas.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      const mouseEvent = new MouseEvent('mouseup', {});
-      canvas.dispatchEvent(mouseEvent);
-    });
 
     // Tool selection
     pencilTool.addEventListener('click', () => {
@@ -719,6 +721,11 @@
       startRound();
     });
 
+    // Leave game
+    leaveBtn.addEventListener('click', () => {
+      window.location.href = `index.html?partyCode=${partyCode}&uid=${uid}`;
+    });
+
     // Start a new round
     function startRound() {
       // Reset canvas
@@ -733,17 +740,30 @@
       
       // Set random player as the drawer
       const drawerIndex = Math.floor(Math.random() * gameState.players.length);
-      gameState.isMyTurn = drawerIndex === 0; // First player is "You"
+      const drawer = gameState.players[drawerIndex];
+      gameState.isMyTurn = drawer.id === uid;
+      
+      // Update party in Firestore
+      db.collection("parties").doc(partyCode).update({
+        currentGameData: {
+          currentPrompt: gameState.currentPrompt,
+          currentDrawer: drawer.id,
+          timer: 60,
+          status: 'drawing'
+        }
+      });
       
       // Update UI
       if (gameState.isMyTurn) {
         promptElement.style.display = 'block';
         startBtn.disabled = true;
         showNotification("It's your turn to draw!");
+        addMessage(`You're drawing: ${gameState.currentPrompt}`, 'system');
       } else {
         promptElement.style.display = 'none';
         startBtn.disabled = false;
-        showNotification(`${gameState.players[drawerIndex].name} is drawing...`);
+        showNotification(`${drawer.name} is drawing...`);
+        addMessage(`${drawer.name} is drawing...`, 'system');
       }
       
       // Start timer
@@ -758,14 +778,16 @@
         gameState.timer--;
         timerElement.textContent = gameState.timer;
         
+        // Update Firestore
+        db.collection("parties").doc(partyCode).update({
+          "currentGameData.timer": gameState.timer
+        });
+        
         if (gameState.timer <= 0) {
           clearInterval(gameState.timerInterval);
           endRound(false);
         }
       }, 1000);
-      
-      // Add message to chat
-      addMessage(`Round started! Drawing: ${gameState.currentPrompt}`, 'system');
     }
 
     // End the round
@@ -773,17 +795,24 @@
       clearInterval(gameState.timerInterval);
       
       if (guessed) {
-        // Add points to drawer and guesser
+        // Add points to guesser
         const points = gameState.timer; // More points for faster guesses
-        gameState.players[0].score += points;
+        const guesser = gameState.players.find(p => p.id === uid);
+        guesser.score = (guesser.score || 0) + points;
+        
+        // Update Firestore
+        db.collection("parties").doc(partyCode).update({
+          players: gameState.players
+        });
         
         // Show winner banner
-        document.querySelector('.winner-name').textContent = "Sarah";
+        winnerName.textContent = guesser.name;
+        winnerMessage.textContent = `Successfully guessed "${gameState.currentPrompt}" in ${60 - gameState.timer} seconds!`;
         winnerBanner.style.display = 'block';
         overlay.style.display = 'block';
         
         // Add message to chat
-        addMessage(`Sarah correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
+        addMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
       } else {
         // No one guessed correctly
         showNotification("Time's up! No one guessed correctly.");
@@ -806,7 +835,7 @@
         li.innerHTML = `
           <div class="player-avatar">${player.name.charAt(0)}</div>
           <div class="player-name">${player.name}</div>
-          <div class="player-score">${player.score}</div>
+          <div class="player-score">${player.score || 0}</div>
         `;
         playersList.appendChild(li);
       });
@@ -826,7 +855,7 @@
       } else if (sender === 'other') {
         messageDiv.classList.add('other');
         messageDiv.innerHTML = `
-          <div class="sender">Sarah</div>
+          <div class="sender">Player</div>
           <div class="text">${text}</div>
         `;
       } else {
@@ -870,13 +899,26 @@
       }, 3000);
     }
 
-    // Initialize player list
-    updatePlayerList();
-
-    // Simulate a chat message from another player
-    setTimeout(() => {
-      addMessage("Is it a dog?", 'other');
-    }, 5000);
+    // Initialize the game
+    window.onload = function() {
+      initializeGame();
+      
+      // Add welcome message
+      addMessage("Welcome to Quick Draw! Wait for the host to start the game.", 'system');
+      
+      // Simulate players joining
+      setTimeout(() => {
+        addMessage("Player1 joined the game", 'system');
+      }, 1000);
+      
+      setTimeout(() => {
+        addMessage("Player2 joined the game", 'system');
+      }, 2000);
+      
+      setTimeout(() => {
+        addMessage("Player3 joined the game", 'system');
+      }, 3000);
+    };
   </script>
 </body>
 </html>
