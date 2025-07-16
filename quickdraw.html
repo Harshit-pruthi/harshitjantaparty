@@ -471,7 +471,7 @@
     <div class="game-content">
       <div class="canvas-container">
         <div class="canvas-header">
-          <div id="prompt">Dog</div>
+          <div id="prompt">Waiting for host...</div>
           <div id="timer">60</div>
         </div>
         <canvas id="drawingCanvas" width="800" height="400"></canvas>
@@ -560,7 +560,9 @@
       score: 0,
       players: [],
       prompts: ['Dog', 'Cat', 'House', 'Car', 'Tree', 'Sun', 'Mountain', 'River', 'Boat', 'Book'],
-      currentPrompt: 'Dog'
+      currentPrompt: '',
+      currentDrawer: null,
+      isHost: false
     };
 
     // DOM elements
@@ -611,22 +613,33 @@
           if (doc.exists) {
             const party = doc.data();
             gameState.players = party.players;
+            
+            // Find current user
+            currentUser = gameState.players.find(p => p.id === uid);
+            gameState.isHost = currentUser.id === party.hostId;
+            
             updatePlayerList();
             playersCount.textContent = `${gameState.players.length}/${party.maxPlayers}`;
             
-            // Set current user
-            currentUser = gameState.players.find(p => p.id === uid);
+            // Show/hide start button based on host status
+            if (gameState.isHost) {
+              startBtn.style.display = 'flex';
+            } else {
+              startBtn.style.display = 'none';
+            }
             
             // Check if game has started
             if (party.currentGameData) {
               gameState.currentPrompt = party.currentGameData.currentPrompt;
+              gameState.currentDrawer = party.currentGameData.currentDrawer;
               gameState.isMyTurn = party.currentGameData.currentDrawer === uid;
-              promptElement.textContent = gameState.currentPrompt;
               
-              // If it's not my turn, hide the prompt
-              if (!gameState.isMyTurn) {
-                promptElement.style.display = 'none';
+              // Update UI
+              if (gameState.isMyTurn) {
+                promptElement.textContent = gameState.currentPrompt;
+                promptElement.style.display = 'block';
               } else {
+                promptElement.textContent = `${gameState.players.find(p => p.id === gameState.currentDrawer)?.name || 'Someone'} is drawing...`;
                 promptElement.style.display = 'block';
               }
               
@@ -638,8 +651,22 @@
               if (party.currentGameData.status === 'drawing' && !gameState.timerInterval) {
                 startTimer();
               }
+            } else {
+              promptElement.textContent = 'Waiting for host to start...';
             }
           }
+        });
+        
+      // Setup chat listener
+      db.collection("parties").doc(partyCode).collection("chat")
+        .orderBy("timestamp")
+        .onSnapshot(snapshot => {
+          snapshot.docChanges().forEach(change => {
+            if (change.type === "added") {
+              const message = change.doc.data();
+              addMessage(message.text, message.senderId === uid ? 'self' : 'other', message.senderName);
+            }
+          });
         });
     }
 
@@ -657,7 +684,7 @@
     }
 
     function draw(e) {
-      if (!gameState.isDrawing) return;
+      if (!gameState.isDrawing || !gameState.isMyTurn) return;
       
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -706,6 +733,8 @@
 
     // Clear canvas
     clearBtn.addEventListener('click', () => {
+      if (!gameState.isMyTurn) return;
+      
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.strokeStyle = gameState.currentColor;
@@ -723,11 +752,13 @@
 
     // Leave game
     leaveBtn.addEventListener('click', () => {
-      window.location.href = `index.html?partyCode=${partyCode}&uid=${uid}`;
+      window.location.href = `index.html`;
     });
 
     // Start a new round
     function startRound() {
+      if (!gameState.isHost) return;
+      
       // Reset canvas
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -736,12 +767,11 @@
       // Set a random prompt
       const randomIndex = Math.floor(Math.random() * gameState.prompts.length);
       gameState.currentPrompt = gameState.prompts[randomIndex];
-      promptElement.textContent = gameState.currentPrompt;
       
       // Set random player as the drawer
       const drawerIndex = Math.floor(Math.random() * gameState.players.length);
       const drawer = gameState.players[drawerIndex];
-      gameState.isMyTurn = drawer.id === uid;
+      gameState.currentDrawer = drawer.id;
       
       // Update party in Firestore
       db.collection("parties").doc(partyCode).update({
@@ -753,20 +783,14 @@
         }
       });
       
-      // Update UI
-      if (gameState.isMyTurn) {
-        promptElement.style.display = 'block';
-        startBtn.disabled = true;
-        showNotification("It's your turn to draw!");
-        addMessage(`You're drawing: ${gameState.currentPrompt}`, 'system');
-      } else {
-        promptElement.style.display = 'none';
-        startBtn.disabled = false;
-        showNotification(`${drawer.name} is drawing...`);
-        addMessage(`${drawer.name} is drawing...`, 'system');
-      }
-      
       // Start timer
+      startTimer();
+      
+      // Add message to chat
+      addChatMessage(`Round started! ${drawer.name} is drawing.`, 'system');
+    }
+
+    function startTimer() {
       gameState.timer = 60;
       timerElement.textContent = gameState.timer;
       
@@ -794,6 +818,11 @@
     function endRound(guessed) {
       clearInterval(gameState.timerInterval);
       
+      // Update Firestore
+      db.collection("parties").doc(partyCode).update({
+        "currentGameData.status": "ended"
+      });
+      
       if (guessed) {
         // Add points to guesser
         const points = gameState.timer; // More points for faster guesses
@@ -812,18 +841,15 @@
         overlay.style.display = 'block';
         
         // Add message to chat
-        addMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
+        addChatMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
       } else {
         // No one guessed correctly
         showNotification("Time's up! No one guessed correctly.");
-        addMessage(`Time's up! The drawing was "${gameState.currentPrompt}"`, 'system');
+        addChatMessage(`Time's up! The drawing was "${gameState.currentPrompt}"`, 'system');
       }
       
       // Update player list
       updatePlayerList();
-      
-      // Enable start button for next round
-      startBtn.disabled = false;
     }
 
     // Update player list
@@ -834,7 +860,7 @@
         const li = document.createElement('li');
         li.innerHTML = `
           <div class="player-avatar">${player.name.charAt(0)}</div>
-          <div class="player-name">${player.name}</div>
+          <div class="player-name">${player.name} ${player.id === uid ? '(You)' : ''}</div>
           <div class="player-score">${player.score || 0}</div>
         `;
         playersList.appendChild(li);
@@ -842,7 +868,7 @@
     }
 
     // Add message to chat
-    function addMessage(text, sender) {
+    function addMessage(text, sender, senderName) {
       const messageDiv = document.createElement('div');
       messageDiv.classList.add('message');
       
@@ -855,7 +881,7 @@
       } else if (sender === 'other') {
         messageDiv.classList.add('other');
         messageDiv.innerHTML = `
-          <div class="sender">Player</div>
+          <div class="sender">${senderName}</div>
           <div class="text">${text}</div>
         `;
       } else {
@@ -865,6 +891,16 @@
       
       messagesContainer.appendChild(messageDiv);
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
+    function addChatMessage(text, type) {
+      db.collection("parties").doc(partyCode).collection("chat").add({
+        text: text,
+        senderId: uid,
+        senderName: currentUser?.name || "Player",
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        type: type
+      });
     }
 
     // Send message
@@ -881,10 +917,10 @@
       
       // Check if the message is a correct guess
       if (!gameState.isMyTurn && text.toLowerCase() === gameState.currentPrompt.toLowerCase()) {
-        addMessage(`${text} - Correct!`, 'self');
+        addChatMessage(`${text} - Correct!`, 'guess');
         endRound(true);
       } else {
-        addMessage(text, 'self');
+        addChatMessage(text, 'message');
       }
       
       messageInput.value = '';
@@ -905,19 +941,6 @@
       
       // Add welcome message
       addMessage("Welcome to Quick Draw! Wait for the host to start the game.", 'system');
-      
-      // Simulate players joining
-      setTimeout(() => {
-        addMessage("Player1 joined the game", 'system');
-      }, 1000);
-      
-      setTimeout(() => {
-        addMessage("Player2 joined the game", 'system');
-      }, 2000);
-      
-      setTimeout(() => {
-        addMessage("Player3 joined the game", 'system');
-      }, 3000);
     };
   </script>
 </body>
