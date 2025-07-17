@@ -164,6 +164,11 @@
       animation: pulse 1.5s infinite;
     }
 
+    .status-dot.disconnected {
+      background-color: #ff2a6d;
+      animation: none;
+    }
+
     @keyframes pulse {
       0% { opacity: 0.7; }
       50% { opacity: 1; }
@@ -426,6 +431,30 @@
       display: block;
     }
 
+    .player-kick-btn {
+      background: #ff2a6d;
+      color: white;
+      border: none;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.3s;
+    }
+
+    .player-kick-btn:hover {
+      opacity: 1;
+    }
+
+    .player-controls {
+      display: flex;
+      gap: 8px;
+    }
+
     @media (max-width: 768px) {
       h1 {
         font-size: 2.2rem;
@@ -477,8 +506,8 @@
       <div class="lobby-header">
         <h2><i class="fas fa-door-open"></i> Lobby: <span id="lobbyCode"></span></h2>
         <div class="status-indicator">
-          <div class="status-dot"></div>
-          <span>Connected</span>
+          <div class="status-dot" id="connectionDot"></div>
+          <span id="connectionStatus">Connected</span>
         </div>
       </div>
       <p><strong>Party Name:</strong> <span id="lobbyName"></span></p>
@@ -584,6 +613,11 @@
       puzzlebattle: "Collaborate or compete to solve intricate puzzles. Piece together clues faster than your opponents to claim victory."
     };
 
+    // Player connection status
+    let connectionStatus = "Connected";
+    const connectionDot = document.getElementById('connectionDot');
+    const connectionStatusText = document.getElementById('connectionStatus');
+
     // Show notification function
     function showNotification(message) {
       const notification = document.getElementById('notification');
@@ -592,6 +626,18 @@
       setTimeout(() => {
         notification.style.display = 'none';
       }, 3000);
+    }
+
+    // Update connection status
+    function updateConnectionStatus(status) {
+      connectionStatus = status;
+      connectionStatusText.textContent = status;
+      
+      if (status === "Connected") {
+        connectionDot.classList.remove('disconnected');
+      } else {
+        connectionDot.classList.add('disconnected');
+      }
     }
 
     // Modal functions
@@ -670,6 +716,7 @@
         document.getElementById('lobby').style.display = 'block';
         closeModal('createModal');
         showNotification('Party created successfully!');
+        updateConnectionStatus("Connected");
       });
     }
 
@@ -691,21 +738,38 @@
           document.getElementById('lobby').style.display = 'block';
           closeModal('joinModal');
           showNotification('Joined party successfully!');
+          updateConnectionStatus("Connected");
         });
       });
     }
 
     function listenToPartyUpdates(code) {
       partyListener = db.collection("parties").doc(code).onSnapshot(doc => {
-        if (!doc.exists) return leaveParty();
-        currentParty = doc.data();
-        updateLobbyUI(currentParty);
+        if (!doc.exists) {
+          handlePartyEnded('The party has been closed by the host.');
+          return;
+        }
+        
+        const party = doc.data();
+        currentParty = party;
+        updateLobbyUI(party);
         
         // Check if host started a game
         if (currentParty.currentGame) {
           // Redirect to game page
           window.location.href = `${currentParty.currentGame}.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
         }
+      }, error => {
+        console.error("Error listening to party updates:", error);
+        updateConnectionStatus("Disconnected");
+        showNotification('Connection lost. Trying to reconnect...');
+        
+        // Try to reconnect after a delay
+        setTimeout(() => {
+          if (currentParty) {
+            listenToPartyUpdates(currentParty.code);
+          }
+        }, 3000);
       });
     }
 
@@ -751,6 +815,16 @@
         infoContainer.appendChild(roleTag);
         
         li.appendChild(infoContainer);
+        
+        // Add kick button for host
+        if (currentUser.uid === party.hostId && p.id !== party.hostId) {
+          const kickBtn = document.createElement('button');
+          kickBtn.className = 'player-kick-btn';
+          kickBtn.innerHTML = '<i class="fas fa-times"></i>';
+          kickBtn.onclick = () => kickPlayer(p.id);
+          li.appendChild(kickBtn);
+        }
+        
         list.appendChild(li);
       });
       
@@ -765,6 +839,25 @@
         hostControls.style.display = 'none';
         playerControls.style.display = 'block';
       }
+    }
+
+    function kickPlayer(playerId) {
+      if (!currentParty || !currentUser || currentUser.uid !== currentParty.hostId) {
+        showNotification('Only the host can kick players!');
+        return;
+      }
+      
+      const playerToKick = currentParty.players.find(p => p.id === playerId);
+      if (!playerToKick) return;
+      
+      db.collection("parties").doc(currentParty.code).update({
+        players: firebase.firestore.FieldValue.arrayRemove(playerToKick)
+      }).then(() => {
+        showNotification(`${playerToKick.name} has been kicked from the party`);
+      }).catch(error => {
+        console.error("Error kicking player:", error);
+        showNotification('Failed to kick player');
+      });
     }
 
     function showGames() {
@@ -842,12 +935,11 @@
         // HOST: Delete entire lobby
         db.collection("parties").doc(currentParty.code).delete()
           .then(() => {
-            cleanupAfterLeave();
-            showNotification('Party deleted successfully!');
+            handlePartyEnded('Party deleted successfully!');
           })
           .catch(error => {
             console.error("Error deleting party: ", error);
-            cleanupAfterLeave();
+            handlePartyEnded('Failed to delete party');
           });
       } else {
         // REGULAR PLAYER: Just remove self
@@ -855,8 +947,7 @@
           players: firebase.firestore.FieldValue.arrayRemove(userData)
         })
         .then(() => {
-          cleanupAfterLeave();
-          showNotification('Left party successfully!');
+          handlePartyEnded('Left party successfully!');
         })
         .catch(error => {
           console.error("Error leaving party: ", error);
@@ -864,8 +955,8 @@
         });
       }
     }
-
-    function cleanupAfterLeave() {
+    
+    function handlePartyEnded(message) {
       if (partyListener) {
         partyListener();
         partyListener = null;
@@ -874,13 +965,27 @@
       document.getElementById('games').style.display = 'none';
       document.getElementById('lobbyUI').style.display = 'block';
       currentParty = null;
+      updateConnectionStatus("Disconnected");
+      
+      if (message) {
+        showNotification(message);
+      }
     }
 
     // Handle host tab closure
     window.addEventListener('beforeunload', function(event) {
-      if (currentParty && currentUser && currentUser.uid === currentParty.hostId) {
-        db.collection("parties").doc(currentParty.code).delete()
-          .catch(error => console.error("Error deleting party during unload:", error));
+      if (currentParty && currentUser) {
+        if (currentUser.uid === currentParty.hostId) {
+          // Delete party if host leaves
+          db.collection("parties").doc(currentParty.code).delete()
+            .catch(error => console.error("Error deleting party during unload:", error));
+        } else {
+          // Remove player from party
+          const userData = { id: currentUser.uid, name: currentUser.displayName };
+          db.collection("parties").doc(currentParty.code).update({
+            players: firebase.firestore.FieldValue.arrayRemove(userData)
+          }).catch(error => console.error("Error removing player during unload:", error));
+        }
       }
     });
 
@@ -892,6 +997,9 @@
         const hue = Math.floor(Math.random() * 360);
         header.style.textShadow = `0 0 20px hsl(${hue}, 100%, 50%)`;
       }, 2000);
+      
+      // Initialize connection status
+      updateConnectionStatus("Disconnected");
     };
   </script>
 </body>
