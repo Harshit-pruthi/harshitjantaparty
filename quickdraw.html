@@ -13,7 +13,7 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      font-family: 'Oxanium', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
 
     body {
@@ -206,6 +206,12 @@
       background: rgba(39, 0, 130, 0.3);
       border-radius: 10px;
       gap: 15px;
+      transition: all 0.3s;
+    }
+
+    #players li:hover {
+      transform: translateY(-3px);
+      background: rgba(39, 0, 130, 0.5);
     }
 
     .player-avatar {
@@ -440,6 +446,34 @@
       z-index: 999;
     }
 
+    .waiting-section {
+      text-align: center;
+      padding: 40px;
+      background: rgba(26, 26, 64, 0.7);
+      border-radius: 15px;
+      margin-top: 30px;
+      border: 2px solid #05d9e8;
+    }
+
+    .waiting-section i {
+      font-size: 4rem;
+      color: #05d9e8;
+      margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+
+    .waiting-section h3 {
+      color: #05d9e8;
+      margin-bottom: 15px;
+      font-size: 1.8rem;
+    }
+
     /* Scrollbar styling */
     #messages::-webkit-scrollbar, #players::-webkit-scrollbar {
       width: 8px;
@@ -518,6 +552,12 @@
       <button class="game-btn secondary" id="clearBtn"><i class="fas fa-trash"></i> Clear Canvas</button>
       <button class="game-btn secondary" id="leaveBtn"><i class="fas fa-sign-out-alt"></i> Leave Game</button>
     </div>
+
+    <div class="waiting-section" id="waitingSection">
+      <i class="fas fa-hourglass-half"></i>
+      <h3>Waiting for Host to Start the Game</h3>
+      <p>Please wait while the host starts the first round</p>
+    </div>
   </div>
 
   <div class="notification" id="notification" style="display: none;"></div>
@@ -562,7 +602,8 @@
       prompts: ['Dog', 'Cat', 'House', 'Car', 'Tree', 'Sun', 'Mountain', 'River', 'Boat', 'Book'],
       currentPrompt: '',
       currentDrawer: null,
-      isHost: false
+      isHost: false,
+      gameStarted: false
     };
 
     // DOM elements
@@ -588,6 +629,7 @@
     const winnerMessage = document.getElementById('winnerMessage');
     const lobbyCodeDisplay = document.getElementById('lobbyCodeDisplay');
     const playersCount = document.getElementById('playersCount');
+    const waitingSection = document.getElementById('waitingSection');
 
     // Set canvas background to white
     ctx.fillStyle = '#FFFFFF';
@@ -614,16 +656,18 @@
             const party = doc.data();
             gameState.players = party.players;
             
-            // Find current user
-            currentUser = gameState.players.find(p => p.id === uid);
-            gameState.isHost = currentUser.id === party.hostId;
-            
+            // Update player list and count
             updatePlayerList();
             playersCount.textContent = `${gameState.players.length}/${party.maxPlayers}`;
+            
+            // Find current user
+            currentUser = gameState.players.find(p => p.id === uid);
+            gameState.isHost = currentUser && currentUser.id === party.hostId;
             
             // Show/hide start button based on host status
             if (gameState.isHost) {
               startBtn.style.display = 'flex';
+              waitingSection.style.display = 'none';
             } else {
               startBtn.style.display = 'none';
             }
@@ -632,14 +676,19 @@
             if (party.currentGameData) {
               gameState.currentPrompt = party.currentGameData.currentPrompt;
               gameState.currentDrawer = party.currentGameData.currentDrawer;
-              gameState.isMyTurn = party.currentGameData.currentDrawer === uid;
+              gameState.isMyTurn = gameState.currentDrawer === uid;
+              gameState.gameStarted = true;
+              
+              waitingSection.style.display = 'none';
               
               // Update UI
               if (gameState.isMyTurn) {
                 promptElement.textContent = gameState.currentPrompt;
                 promptElement.style.display = 'block';
+                showNotification("It's your turn to draw!");
               } else {
-                promptElement.textContent = `${gameState.players.find(p => p.id === gameState.currentDrawer)?.name || 'Someone'} is drawing...`;
+                const drawerName = gameState.players.find(p => p.id === gameState.currentDrawer)?.name || "Someone";
+                promptElement.textContent = `${drawerName} is drawing...`;
                 promptElement.style.display = 'block';
               }
               
@@ -652,6 +701,9 @@
                 startTimer();
               }
             } else {
+              if (!gameState.isHost) {
+                waitingSection.style.display = 'block';
+              }
               promptElement.textContent = 'Waiting for host to start...';
             }
           }
@@ -672,7 +724,7 @@
 
     // Drawing functions
     function startDrawing(e) {
-      if (!gameState.isMyTurn) return;
+      if (!gameState.isMyTurn || !gameState.gameStarted) return;
       
       gameState.isDrawing = true;
       draw(e);
@@ -684,7 +736,7 @@
     }
 
     function draw(e) {
-      if (!gameState.isDrawing || !gameState.isMyTurn) return;
+      if (!gameState.isDrawing || !gameState.isMyTurn || !gameState.gameStarted) return;
       
       const rect = canvas.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -733,7 +785,7 @@
 
     // Clear canvas
     clearBtn.addEventListener('click', () => {
-      if (!gameState.isMyTurn) return;
+      if (!gameState.isMyTurn || !gameState.gameStarted) return;
       
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -793,6 +845,7 @@
     function startTimer() {
       gameState.timer = 60;
       timerElement.textContent = gameState.timer;
+      gameState.gameStarted = true;
       
       if (gameState.timerInterval) {
         clearInterval(gameState.timerInterval);
@@ -825,23 +878,25 @@
       
       if (guessed) {
         // Add points to guesser
-        const points = gameState.timer; // More points for faster guesses
+        const points = gameState.timer;
         const guesser = gameState.players.find(p => p.id === uid);
-        guesser.score = (guesser.score || 0) + points;
-        
-        // Update Firestore
-        db.collection("parties").doc(partyCode).update({
-          players: gameState.players
-        });
-        
-        // Show winner banner
-        winnerName.textContent = guesser.name;
-        winnerMessage.textContent = `Successfully guessed "${gameState.currentPrompt}" in ${60 - gameState.timer} seconds!`;
-        winnerBanner.style.display = 'block';
-        overlay.style.display = 'block';
-        
-        // Add message to chat
-        addChatMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
+        if (guesser) {
+          guesser.score = (guesser.score || 0) + points;
+          
+          // Update Firestore
+          db.collection("parties").doc(partyCode).update({
+            players: gameState.players
+          });
+          
+          // Show winner banner
+          winnerName.textContent = guesser.name;
+          winnerMessage.textContent = `Successfully guessed "${gameState.currentPrompt}" in ${60 - gameState.timer} seconds!`;
+          winnerBanner.style.display = 'block';
+          overlay.style.display = 'block';
+          
+          // Add message to chat
+          addChatMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
+        }
       } else {
         // No one guessed correctly
         showNotification("Time's up! No one guessed correctly.");
