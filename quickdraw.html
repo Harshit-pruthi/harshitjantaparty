@@ -453,6 +453,7 @@
       border-radius: 15px;
       margin-top: 30px;
       border: 2px solid #05d9e8;
+      display: none;
     }
 
     .waiting-section i {
@@ -505,7 +506,7 @@
     <div class="game-content">
       <div class="canvas-container">
         <div class="canvas-header">
-          <div id="prompt">Waiting for host...</div>
+          <div id="prompt">Connecting to game...</div>
           <div id="timer">60</div>
         </div>
         <canvas id="drawingCanvas" width="800" height="400"></canvas>
@@ -536,7 +537,7 @@
           <h2><i class="fas fa-comments"></i> Chat</h2>
           <div id="messages">
             <div class="message system">
-              Welcome to Quick Draw! The game will start soon.
+              Connecting to game lobby...
             </div>
           </div>
           <div class="chat-input">
@@ -555,8 +556,8 @@
 
     <div class="waiting-section" id="waitingSection">
       <i class="fas fa-hourglass-half"></i>
-      <h3>Waiting for Host to Start the Game</h3>
-      <p>Please wait while the host starts the first round</p>
+      <h3>Connecting to Players</h3>
+      <p>Please wait while we connect all players from the lobby...</p>
     </div>
   </div>
 
@@ -597,7 +598,6 @@
       isMyTurn: false,
       timer: 60,
       timerInterval: null,
-      score: 0,
       players: [],
       prompts: ['Dog', 'Cat', 'House', 'Car', 'Tree', 'Sun', 'Mountain', 'River', 'Boat', 'Book'],
       currentPrompt: '',
@@ -644,8 +644,13 @@
     // Display lobby code
     lobbyCodeDisplay.textContent = partyCode;
 
+    // Show connecting message
+    waitingSection.style.display = 'block';
+    promptElement.textContent = 'Connecting to game lobby...';
+
     // Listen to party updates
     let partyListener = null;
+    let chatListener = null;
     let currentUser = null;
 
     function initializeGame() {
@@ -654,22 +659,31 @@
         .onSnapshot(doc => {
           if (doc.exists) {
             const party = doc.data();
-            gameState.players = party.players;
             
             // Update player list and count
+            gameState.players = party.players;
             updatePlayerList();
             playersCount.textContent = `${gameState.players.length}/${party.maxPlayers}`;
             
             // Find current user
             currentUser = gameState.players.find(p => p.id === uid);
-            gameState.isHost = currentUser && currentUser.id === party.hostId;
             
-            // Show/hide start button based on host status
-            if (gameState.isHost) {
-              startBtn.style.display = 'flex';
+            // Hide waiting section when players are loaded
+            if (gameState.players.length > 0) {
               waitingSection.style.display = 'none';
-            } else {
-              startBtn.style.display = 'none';
+            }
+            
+            if (currentUser) {
+              gameState.isHost = currentUser.id === party.hostId;
+              
+              // Show/hide start button based on host status
+              if (gameState.isHost) {
+                startBtn.style.display = 'flex';
+                promptElement.textContent = 'You are the host - start the game!';
+              } else {
+                startBtn.style.display = 'none';
+                promptElement.textContent = 'Waiting for host to start the game...';
+              }
             }
             
             // Check if game has started
@@ -679,17 +693,13 @@
               gameState.isMyTurn = gameState.currentDrawer === uid;
               gameState.gameStarted = true;
               
-              waitingSection.style.display = 'none';
-              
               // Update UI
               if (gameState.isMyTurn) {
                 promptElement.textContent = gameState.currentPrompt;
-                promptElement.style.display = 'block';
                 showNotification("It's your turn to draw!");
               } else {
                 const drawerName = gameState.players.find(p => p.id === gameState.currentDrawer)?.name || "Someone";
                 promptElement.textContent = `${drawerName} is drawing...`;
-                promptElement.style.display = 'block';
               }
               
               // Update timer
@@ -700,17 +710,20 @@
               if (party.currentGameData.status === 'drawing' && !gameState.timerInterval) {
                 startTimer();
               }
-            } else {
-              if (!gameState.isHost) {
-                waitingSection.style.display = 'block';
-              }
-              promptElement.textContent = 'Waiting for host to start...';
             }
+          } else {
+            showNotification("Party not found! Returning to lobby...");
+            setTimeout(() => {
+              window.location.href = 'index.html';
+            }, 3000);
           }
+        }, error => {
+          console.error("Error listening to party:", error);
+          showNotification("Connection error. Trying to reconnect...");
         });
         
       // Setup chat listener
-      db.collection("parties").doc(partyCode).collection("chat")
+      chatListener = db.collection("parties").doc(partyCode).collection("chat")
         .orderBy("timestamp")
         .onSnapshot(snapshot => {
           snapshot.docChanges().forEach(change => {
@@ -719,6 +732,8 @@
               addMessage(message.text, message.senderId === uid ? 'self' : 'other', message.senderName);
             }
           });
+        }, error => {
+          console.error("Error listening to chat:", error);
         });
     }
 
@@ -795,7 +810,7 @@
     // Start round
     startBtn.addEventListener('click', startRound);
 
-    // Simulate next round
+    // Next round
     nextRoundBtn.addEventListener('click', () => {
       winnerBanner.style.display = 'none';
       overlay.style.display = 'none';
@@ -804,7 +819,9 @@
 
     // Leave game
     leaveBtn.addEventListener('click', () => {
-      window.location.href = `index.html`;
+      if (partyListener) partyListener();
+      if (chatListener) chatListener();
+      window.location.href = 'index.html';
     });
 
     // Start a new round
@@ -833,13 +850,13 @@
           timer: 60,
           status: 'drawing'
         }
+      }).then(() => {
+        // Add message to chat
+        addChatMessage(`Round started! ${drawer.name} is drawing.`, 'system');
+      }).catch(error => {
+        console.error("Error starting round:", error);
+        showNotification("Failed to start round. Please try again.");
       });
-      
-      // Start timer
-      startTimer();
-      
-      // Add message to chat
-      addChatMessage(`Round started! ${drawer.name} is drawing.`, 'system');
     }
 
     function startTimer() {
@@ -858,6 +875,8 @@
         // Update Firestore
         db.collection("parties").doc(partyCode).update({
           "currentGameData.timer": gameState.timer
+        }).catch(error => {
+          console.error("Error updating timer:", error);
         });
         
         if (gameState.timer <= 0) {
@@ -874,28 +893,32 @@
       // Update Firestore
       db.collection("parties").doc(partyCode).update({
         "currentGameData.status": "ended"
+      }).catch(error => {
+        console.error("Error ending round:", error);
       });
       
       if (guessed) {
-        // Add points to guesser
-        const points = gameState.timer;
+        // Find guesser and add points
         const guesser = gameState.players.find(p => p.id === uid);
         if (guesser) {
+          const points = gameState.timer;
           guesser.score = (guesser.score || 0) + points;
           
           // Update Firestore
           db.collection("parties").doc(partyCode).update({
             players: gameState.players
+          }).then(() => {
+            // Show winner banner
+            winnerName.textContent = guesser.name;
+            winnerMessage.textContent = `Successfully guessed "${gameState.currentPrompt}" in ${60 - gameState.timer} seconds!`;
+            winnerBanner.style.display = 'block';
+            overlay.style.display = 'block';
+            
+            // Add message to chat
+            addChatMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
+          }).catch(error => {
+            console.error("Error updating scores:", error);
           });
-          
-          // Show winner banner
-          winnerName.textContent = guesser.name;
-          winnerMessage.textContent = `Successfully guessed "${gameState.currentPrompt}" in ${60 - gameState.timer} seconds!`;
-          winnerBanner.style.display = 'block';
-          overlay.style.display = 'block';
-          
-          // Add message to chat
-          addChatMessage(`${guesser.name} correctly guessed "${gameState.currentPrompt}" and earned ${points} points!`, 'system');
         }
       } else {
         // No one guessed correctly
@@ -949,12 +972,16 @@
     }
     
     function addChatMessage(text, type) {
+      if (!currentUser) return;
+      
       db.collection("parties").doc(partyCode).collection("chat").add({
         text: text,
         senderId: uid,
-        senderName: currentUser?.name || "Player",
+        senderName: currentUser.name,
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
         type: type
+      }).catch(error => {
+        console.error("Error sending message:", error);
       });
     }
 
@@ -968,10 +995,10 @@
 
     function sendMessage() {
       const text = messageInput.value.trim();
-      if (text === '') return;
+      if (text === '' || !currentUser) return;
       
       // Check if the message is a correct guess
-      if (!gameState.isMyTurn && text.toLowerCase() === gameState.currentPrompt.toLowerCase()) {
+      if (gameState.gameStarted && !gameState.isMyTurn && text.toLowerCase() === gameState.currentPrompt.toLowerCase()) {
         addChatMessage(`${text} - Correct!`, 'guess');
         endRound(true);
       } else {
@@ -992,10 +1019,18 @@
 
     // Initialize the game
     window.onload = function() {
+      if (!partyCode || !uid) {
+        showNotification("Missing party information! Returning to lobby...");
+        setTimeout(() => {
+          window.location.href = 'index.html';
+        }, 3000);
+        return;
+      }
+      
       initializeGame();
       
       // Add welcome message
-      addMessage("Welcome to Quick Draw! Wait for the host to start the game.", 'system');
+      addMessage("Connecting to game lobby...", 'system');
     };
   </script>
 </body>
