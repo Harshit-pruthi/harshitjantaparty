@@ -1,1006 +1,751 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Game Lobby</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Oxanium:wght@400;700&display=swap" rel="stylesheet">
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: 'Oxanium', sans-serif;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Tree Blueprint</title>
+    <style>
+        :root {
+            --bg-color: #2b3a42;
+            --grid-line: #3a4b55;
+            --node-bg: #1e2a30;
+            --text-color: #e0f7fa;
+            --accent: #4dd0e1;
+            --alive: #00e676;
+            --dead: #ff5252;
+            --unsure: #ffea00;
+            --line-color: #b0bec5;
+            --panel-bg: rgba(30, 42, 48, 0.98);
+        }
 
-    body {
-      background: linear-gradient(135deg, #1a1a40, #270082);
-      color: #d1d1d1;
-      min-height: 100vh;
-      padding: 20px;
-      overflow-x: hidden;
-    }
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            user-select: none;
+        }
 
-    .notification {
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #05d9e8;
-      color: #1a1a40;
-      padding: 12px 24px;
-      border-radius: 30px;
-      font-weight: bold;
-      z-index: 1000;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-      animation: slideIn 0.5s, fadeOut 0.5s 2.5s forwards;
-    }
+        /* --- Modals & Overlays --- */
+        .overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(30, 42, 48, 0.95); z-index: 2000;
+            display: flex; justify-content: center; align-items: center;
+            backdrop-filter: blur(5px);
+        }
 
-    @keyframes slideIn {
-      from { top: -100px; }
-      to { top: 20px; }
-    }
+        .modal-card {
+            background: #1e2a30; border: 2px solid var(--accent);
+            padding: 30px; width: 320px; text-align: center;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5); border-radius: 8px;
+        }
 
-    @keyframes fadeOut {
-      from { opacity: 1; }
-      to { opacity: 0; visibility: hidden; }
-    }
+        .hidden { display: none !important; }
 
-    h1, h2, h3 {
-      font-family: 'Orbitron', sans-serif;
-      color: #05d9e8;
-      text-align: center;
-      margin: 20px 0;
-      text-shadow: 0 0 10px rgba(5, 217, 232, 0.7);
-      letter-spacing: 1px;
-    }
+        /* Login Specifics */
+        .login-btn {
+            background: #fff; color: #444; border: none; padding: 12px; width: 100%;
+            font-weight: bold; cursor: pointer; display: flex; align-items: center;
+            justify-content: center; gap: 10px; margin-top: 20px; border-radius: 4px;
+            font-family: sans-serif; transition: background 0.2s;
+        }
+        .login-btn:hover { background: #f0f0f0; }
 
-    h1 {
-      font-size: 2.8rem;
-      margin-top: 30px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 15px;
-    }
+        /* Custom Confirmation Modal */
+        #confirm-modal { z-index: 3000; background: rgba(0,0,0,0.8); }
+        .danger-btn { background: var(--dead); color: white; border: none; font-weight: bold; }
+        .danger-btn:hover { background: #d32f2f; }
+        .cancel-btn { background: transparent; border: 1px solid #546e7a; color: #aaa; }
 
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
-    }
+        /* Toast Notifications */
+        #toast-container {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 4000; pointer-events: none;
+        }
+        .toast {
+            background: var(--panel-bg); border: 1px solid var(--accent); color: var(--accent);
+            padding: 10px 20px; border-radius: 20px; margin-top: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5); font-size: 12px;
+            animation: slideUp 0.3s ease-out;
+        }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-    button {
-      background: linear-gradient(to right, #ff2a6d, #d80077);
-      color: white;
-      border: none;
-      padding: 12px 25px;
-      margin: 10px;
-      border-radius: 50px;
-      cursor: pointer;
-      font-size: 1.1rem;
-      font-weight: bold;
-      transition: all 0.3s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    }
+        /* --- Main UI Layout --- */
+        #ui-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 100;
+        }
 
-    button:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 6px 20px rgba(255, 42, 109, 0.4);
-    }
+        .top-bar {
+            position: absolute; top: 0; left: 0; width: 100%; height: 50px;
+            background: var(--panel-bg); border-bottom: 1px solid var(--accent);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; box-sizing: border-box; pointer-events: auto;
+        }
 
-    button:active {
-      transform: translateY(1px);
-    }
+        .top-title { font-weight: bold; font-size: 18px; color: var(--accent); letter-spacing: 2px; }
+        .user-status { font-size: 12px; color: var(--alive); margin-right: 15px; }
 
-    button i {
-      font-size: 1.2rem;
-    }
+        /* Sidebar Containers */
+        .sidebar-left, .sidebar-right {
+            position: absolute; top: 60px; bottom: 10px;
+            display: flex; flex-direction: column; gap: 10px;
+            pointer-events: none; overflow-y: auto; max-height: calc(100vh - 70px);
+        }
+        .sidebar-left { left: 10px; width: 240px; }
+        .sidebar-right { right: 10px; width: 300px; align-items: flex-end; }
 
-    #auth {
-      display: flex;
-      justify-content: center;
-      margin: 40px 0;
-    }
+        /* Panels */
+        .panel {
+            background: var(--panel-bg); border: 1px solid var(--grid-line);
+            padding: 15px; pointer-events: auto; width: 100%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); border-radius: 4px;
+            border-left: 3px solid var(--accent); box-sizing: border-box;
+        }
 
-    #lobbyUI {
-      background: rgba(39, 0, 130, 0.4);
-      border-radius: 20px;
-      padding: 30px;
-      margin: 30px auto;
-      max-width: 600px;
-      text-align: center;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(5, 217, 232, 0.2);
-    }
+        h2, h3 {
+            margin: 0 0 10px 0; font-size: 14px; text-transform: uppercase;
+            letter-spacing: 1px; border-bottom: 1px solid var(--grid-line);
+            padding-bottom: 5px; color: var(--accent);
+        }
 
-    #lobbyUI h2 {
-      margin-bottom: 30px;
-      color: #fff;
-    }
+        /* Controls */
+        button {
+            background: #263238; border: 1px solid var(--accent); color: var(--accent);
+            padding: 8px; cursor: pointer; font-family: inherit; transition: all 0.2s;
+            text-transform: uppercase; font-size: 11px; margin-bottom: 5px; width: 100%;
+        }
+        button:hover { background: var(--accent); color: #000; }
+        .btn-group { display: flex; gap: 5px; }
+        .btn-group button { flex: 1; }
 
-    #lobby {
-      background: rgba(26, 26, 64, 0.7);
-      border-radius: 20px;
-      padding: 30px;
-      margin: 30px auto;
-      max-width: 800px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(5, 217, 232, 0.2);
-    }
+        input[type="text"] {
+            background: #151e22; border: 1px solid #546e7a; color: white;
+            padding: 8px; font-family: inherit; width: 100%; margin-bottom: 10px;
+            box-sizing: border-box;
+        }
 
-    .lobby-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 25px;
-      padding-bottom: 15px;
-      border-bottom: 2px solid rgba(5, 217, 232, 0.3);
-    }
+        .status-group { display: flex; gap: 5px; margin-bottom: 10px; }
+        .radio-btn {
+            flex: 1; padding: 6px 2px; text-align: center; border: 1px solid #546e7a;
+            cursor: pointer; font-size: 10px; opacity: 0.5; transition: all 0.2s;
+        }
+        .radio-btn.active { opacity: 1; font-weight: bold; border-width: 2px; }
+        .radio-btn.alive.active { border-color: var(--alive); color: var(--alive); }
+        .radio-btn.dead.active { border-color: var(--dead); color: var(--dead); }
+        .radio-btn.unsure.active { border-color: var(--unsure); color: var(--unsure); }
 
-    .status-indicator {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.9rem;
-      color: #05d9e8;
-    }
+        /* --- Canvas --- */
+        #viewport {
+            width: 100vw; height: 100vh; cursor: grab; transform-origin: 0 0;
+            background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+                            linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 40px 40px; background-position: center;
+        }
+        #viewport.panning { cursor: grabbing; }
+        #content-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 
-    .status-dot {
-      width: 12px;
-      height: 12px;
-      background-color: #05d9e8;
-      border-radius: 50%;
-      animation: pulse 1.5s infinite;
-    }
+        /* --- Nodes --- */
+        .node {
+            position: absolute; width: 160px; height: 80px; background: var(--node-bg);
+            border: 2px solid #546e7a; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; padding: 10px; cursor: pointer;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: box-shadow 0.2s, transform 0.1s;
+            z-index: 10;
+        }
+        .node:hover { box-shadow: 0 0 10px var(--accent); }
+        .node.selected { border-color: #fff; box-shadow: 0 0 15px var(--accent); z-index: 20; }
+        .node[data-status="alive"] { border-top: 4px solid var(--alive); }
+        .node[data-status="dead"] { border-top: 4px solid var(--dead); }
+        .node[data-status="unsure"] { border-top: 4px solid var(--unsure); }
 
-    .status-dot.disconnected {
-      background-color: #ff2a6d;
-      animation: none;
-    }
+        .node-name {
+            font-weight: bold; text-align: center; margin-bottom: 5px; pointer-events: none;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%;
+        }
+        .node-status { font-size: 10px; opacity: 0.7; text-transform: uppercase; pointer-events: none; }
+        
+        .collapse-btn {
+            position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%);
+            width: 20px; height: 20px; background: #263238; border: 1px solid var(--accent);
+            color: var(--accent); border-radius: 50%; font-size: 14px; line-height: 18px;
+            text-align: center; cursor: pointer; z-index: 25;
+        }
+        .collapse-btn:hover { background: var(--accent); color: black; }
 
-    @keyframes pulse {
-      0% { opacity: 0.7; }
-      50% { opacity: 1; }
-      100% { opacity: 0.7; }
-    }
-
-    #lobby p {
-      margin: 15px 0;
-      font-size: 1.1rem;
-      display: flex;
-      gap: 10px;
-    }
-
-    #lobby p strong {
-      color: #ff2a6d;
-      min-width: 100px;
-    }
-
-    #playerList {
-      list-style: none;
-      margin: 20px 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-      gap: 15px;
-    }
-
-    #playerList li {
-      background: rgba(39, 0, 130, 0.3);
-      border-radius: 15px;
-      padding: 15px;
-      display: flex;
-      align-items: center;
-      gap: 15px;
-      transition: transform 0.3s ease;
-      border: 1px solid rgba(5, 217, 232, 0.1);
-    }
-
-    #playerList li:hover {
-      transform: translateY(-3px);
-      background: rgba(39, 0, 130, 0.5);
-    }
-
-    .player-avatar {
-      width: 45px;
-      height: 45px;
-      background: linear-gradient(135deg, #ff2a6d, #d80077);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: bold;
-      font-size: 1.2rem;
-    }
-
-    .player-info {
-      flex: 1;
-    }
-
-    .player-name {
-      font-weight: bold;
-      font-size: 1.1rem;
-      margin-bottom: 5px;
-    }
-
-    .role-tag {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 15px;
-      font-size: 0.8rem;
-      font-weight: bold;
-      text-transform: uppercase;
-    }
-
-    .host-tag {
-      background: linear-gradient(135deg, #05d9e8, #0084b8);
-      color: #1a1a40;
-    }
-
-    .player-tag {
-      background: linear-gradient(135deg, #7b42f5, #b01eff);
-      color: white;
-    }
-
-    .lobby-controls {
-      display: flex;
-      justify-content: center;
-      margin-top: 30px;
-      gap: 20px;
-    }
-
-    #games {
-      background: rgba(26, 26, 64, 0.7);
-      border-radius: 20px;
-      padding: 30px;
-      margin: 30px auto;
-      max-width: 1000px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(5, 217, 232, 0.2);
-      display: none;
-    }
-
-    .back-btn {
-      background: #7b42f5;
-      margin-bottom: 25px;
-    }
-
-    #games p {
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 1.1rem;
-      color: #d1d1d1;
-    }
-
-    .game-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 25px;
-    }
-
-    .game-card {
-      background: rgba(39, 0, 130, 0.3);
-      border-radius: 15px;
-      padding: 25px 20px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border: 2px solid transparent;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .game-card:hover {
-      transform: translateY(-5px);
-      border-color: #05d9e8;
-      box-shadow: 0 10px 25px rgba(5, 217, 232, 0.2);
-    }
-
-    .game-card.selected {
-      border-color: #ff2a6d;
-      background: rgba(39, 0, 130, 0.5);
-      transform: scale(1.05);
-    }
-
-    .game-icon {
-      font-size: 3.5rem;
-      margin-bottom: 15px;
-      color: #05d9e8;
-    }
-
-    .game-title {
-      font-size: 1.3rem;
-      font-weight: bold;
-      color: white;
-    }
-
-    #gameInfo {
-      background: rgba(39, 0, 130, 0.3);
-      border-radius: 15px;
-      padding: 25px;
-      margin-top: 40px;
-      border: 1px solid rgba(5, 217, 232, 0.2);
-    }
-
-    #gameInfo h3 {
-      color: #ff2a6d;
-      margin-bottom: 15px;
-      text-align: center;
-    }
-
-    #gameDescription {
-      font-size: 1.1rem;
-      line-height: 1.6;
-      margin-bottom: 25px;
-      text-align: center;
-    }
-
-    #startGameBtn {
-      display: block;
-      margin: 20px auto 0;
-      padding: 15px 40px;
-      font-size: 1.2rem;
-    }
-
-    #createModal, #joinModal {
-      display: none;
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(26, 26, 64, 0.95);
-      border-radius: 20px;
-      padding: 30px;
-      z-index: 1000;
-      width: 90%;
-      max-width: 500px;
-      box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5);
-      border: 2px solid #ff2a6d;
-      backdrop-filter: blur(10px);
-    }
-
-    #createModal h3, #joinModal h3 {
-      text-align: center;
-      margin-bottom: 25px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 12px 20px;
-      margin: 15px 0;
-      border-radius: 50px;
-      border: 2px solid #7b42f5;
-      background: rgba(39, 0, 130, 0.3);
-      color: white;
-      font-size: 1rem;
-    }
-
-    input:focus, select:focus {
-      outline: none;
-      border-color: #05d9e8;
-    }
-
-    .modal-buttons {
-      display: flex;
-      justify-content: center;
-      gap: 20px;
-      margin-top: 20px;
-    }
-
-    .overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 999;
-    }
-
-    .waiting-message {
-      text-align: center;
-      margin: 30px 0;
-      padding: 20px;
-      background: rgba(39, 0, 130, 0.3);
-      border-radius: 15px;
-      font-size: 1.2rem;
-      border-left: 4px solid #05d9e8;
-    }
-
-    .waiting-message i {
-      font-size: 2rem;
-      color: #05d9e8;
-      margin-bottom: 15px;
-      display: block;
-    }
-
-    .player-kick-btn {
-      background: #ff2a6d;
-      color: white;
-      border: none;
-      width: 30px;
-      height: 30px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      opacity: 0.7;
-      transition: opacity 0.3s;
-    }
-
-    .player-kick-btn:hover {
-      opacity: 1;
-    }
-
-    .player-controls {
-      display: flex;
-      gap: 8px;
-    }
-
-    @media (max-width: 768px) {
-      h1 {
-        font-size: 2.2rem;
-      }
-      
-      .game-grid {
-        grid-template-columns: 1fr 1fr;
-      }
-      
-      .lobby-controls {
-        flex-direction: column;
-      }
-    }
-
-    @media (max-width: 480px) {
-      h1 {
-        font-size: 1.8rem;
-      }
-      
-      .game-grid {
-        grid-template-columns: 1fr;
-      }
-      
-      #playerList {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+        /* Connections */
+        #connections-layer { position: absolute; top: 0; left: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 5; }
+        path { fill: none; stroke: var(--line-color); stroke-width: 2; }
+        path.spouse { stroke-dasharray: 5, 5; }
+        path.sibling { stroke-dasharray: 2, 2; stroke: var(--unsure); }
+    </style>
 </head>
 <body>
-  <div id="notification" class="notification" style="display: none;"></div>
-  <div class="overlay" id="overlay"></div>
-  
-  <div class="container">
-    <h1><i class="fas fa-gamepad"></i> GAME LOBBY</h1>
 
-    <div id="auth">
-      <button id="signInBtn"><i class="fab fa-google"></i> Sign in with Google</button>
-      <button id="signOutBtn" style="display:none;"><i class="fas fa-sign-out-alt"></i> Sign Out</button>
+    <!-- Cloud Login Modal -->
+    <div id="login-overlay" class="overlay">
+        <div class="modal-card">
+            <h2 style="font-size: 24px; border-bottom: none; margin-bottom: 5px;">BLUEPRINT STUDIO</h2>
+            <p style="color: #aaa; font-size: 12px; margin-bottom: 30px;">Cloud Sync & Storage</p>
+            <div style="text-align: left; font-size: 12px; color: #888; margin-bottom: 10px;">
+                Sign in using your Google account to save your family tree to your personal Firebase project.
+            </div>
+            <button id="auth-btn" class="login-btn">
+                <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.715H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.159 6.656 3.58 9 3.58z"/></svg>
+                Sign In with Google
+            </button>
+            <button id="guest-btn" class="skip-btn" style="background: transparent; border: 1px solid #546e7a; color: #888; margin-top: 10px;">Continue as Guest</button>
+        </div>
     </div>
 
-    <div id="lobbyUI" style="display:none;">
-      <h2>Welcome, <span id="userName"></span></h2>
-      <button onclick="showCreateModal()"><i class="fas fa-plus-circle"></i> Create Party</button>
-      <button onclick="showJoinModal()"><i class="fas fa-sign-in-alt"></i> Join Party</button>
+    <!-- Delete Confirmation Modal -->
+    <div id="confirm-modal" class="overlay hidden">
+        <div class="modal-card" style="border-color: var(--dead);">
+            <h2 style="color: var(--dead); border-color: var(--dead);">DELETE WARNING</h2>
+            <p style="color: #e0f7fa; font-size: 13px; margin: 20px 0;">
+                Are you sure you want to remove <strong id="confirm-name">this person</strong>?<br><br>
+                This will also remove lines connected to them.
+            </p>
+            <div class="btn-group">
+                <button class="cancel-btn" onclick="app.closeConfirm()">Cancel</button>
+                <button class="danger-btn" onclick="app.executeDelete()">Yes, Delete</button>
+            </div>
+        </div>
     </div>
 
-    <div id="lobby" style="display:none;">
-      <div class="lobby-header">
-        <h2><i class="fas fa-door-open"></i> Lobby: <span id="lobbyCode"></span></h2>
-        <div class="status-indicator">
-          <div class="status-dot" id="connectionDot"></div>
-          <span id="connectionStatus">Connected</span>
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Main UI -->
+    <div id="ui-layer">
+        <div class="top-bar">
+            <div class="top-title">FAMILY BLUEPRINT</div>
+            <div style="display: flex; align-items: center;">
+                <div class="user-status" id="user-display">Guest Mode</div>
+                <button onclick="toggleToolbar()" style="width: auto; padding: 5px 15px;">⚙️ Menu</button>
+            </div>
         </div>
-      </div>
-      <p><strong>Party Name:</strong> <span id="lobbyName"></span></p>
-      <p><strong>Players</strong> (<span id="currentPlayers"></span>/<span id="maxPlayers"></span>):</p>
-      <ul id="playerList"></ul>
-      
-      <div id="hostControls" style="display: none;">
-        <div class="lobby-controls">
-          <button id="playGamesBtn" onclick="showGames()"><i class="fas fa-play"></i> Play Games</button>
-          <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
+
+        <div class="sidebar-left">
+            <div id="tools-panel" class="panel">
+                <h3>Controls</h3>
+                <button onclick="createNewTree()">+ New Root</button>
+                <div class="btn-group">
+                    <button onclick="cloudSave()">☁ Save</button>
+                    <button onclick="cloudLoad()">☁ Load</button>
+                </div>
+                <button onclick="resetView()">Recenter</button>
+                <div style="margin-top: 10px; font-size: 10px; opacity: 0.6; line-height: 1.4;">
+                    <strong>Controls:</strong><br>• Drag BG to Pan<br>• Scroll to Zoom<br>• Click Node to Edit
+                </div>
+            </div>
+            <div id="stats-panel" class="panel">
+                <h3>Stats</h3>
+                <div style="display:flex; justify-content: space-between; font-size: 11px;"><span>Total:</span> <span id="stat-total">0</span></div>
+                <div style="display:flex; justify-content: space-between; font-size: 11px;"><span>Alive:</span> <span id="stat-alive" style="color: var(--alive)">0</span></div>
+                <div style="display:flex; justify-content: space-between; font-size: 11px;"><span>Passed:</span> <span id="stat-dead" style="color: var(--dead)">0</span></div>
+            </div>
         </div>
-      </div>
-      
-      <div id="playerControls" style="display: none;">
-        <div class="waiting-message">
-          <i class="fas fa-hourglass-half"></i>
-          <p>Waiting for the host to start the game...</p>
+
+        <div class="sidebar-right">
+            <div id="selection-panel" class="panel hidden">
+                <h3>Edit Member</h3>
+                <span id="sel-name-display" style="display:block; margin-bottom:10px; color:white; font-weight:bold;">Name</span>
+                <input type="text" id="edit-name" placeholder="Full Name">
+                <div class="status-group">
+                    <div class="radio-btn alive" onclick="app.setNodeStatus('alive')">ALIVE</div>
+                    <div class="radio-btn dead" onclick="app.setNodeStatus('dead')">DEAD</div>
+                    <div class="radio-btn unsure" onclick="app.setNodeStatus('unsure')">?</div>
+                </div>
+                <h3>Add Connection</h3>
+                <div class="btn-group">
+                    <button onclick="app.addRelative('parent')">▲ Parent</button>
+                    <button onclick="app.addRelative('child')">▼ Child</button>
+                </div>
+                <div class="btn-group">
+                    <button onclick="app.addRelative('spouse')">❤ Spouse</button>
+                    <button onclick="app.addRelative('sibling')">↔ Sibling</button>
+                </div>
+                <div style="margin-top: 15px; border-top: 1px solid #444; padding-top: 10px;">
+                    <button style="border-color: #ff5252; color: #ff5252;" onclick="app.showDeleteConfirm()">✖ Delete</button>
+                </div>
+            </div>
+            <div id="search-panel" class="panel">
+                <h3>Search</h3>
+                <input type="text" id="search-input" placeholder="Type name..." onkeyup="app.performSearch()" style="margin-bottom:0;">
+            </div>
         </div>
-        <div class="lobby-controls">
-          <button onclick="leaveParty()"><i class="fas fa-sign-out-alt"></i> Leave Party</button>
-        </div>
-      </div>
     </div>
 
-    <div id="games">
-      <button class="back-btn" onclick="goBackToLobby()"><i class="fas fa-arrow-left"></i> Back</button>
-      <h2><i class="fas fa-gamepad"></i> Select a Game</h2>
-      <p>Choose a game to play with your party members</p>
-      
-      <div class="game-grid">
-        <div class="game-card" onclick="selectGame('quickdraw')">
-          <i class="fas fa-bolt game-icon"></i>
-          <span class="game-title">Quick Draw</span>
+    <div id="viewport">
+        <div id="content-layer">
+            <svg id="connections-layer"></svg>
+            <div id="nodes-layer"></div>
         </div>
-        
-        <div class="game-card" onclick="selectGame('wordrace')">
-          <i class="fas fa-keyboard game-icon"></i>
-          <span class="game-title">Word Race</span>
-        </div>
-        
-        <div class="game-card" onclick="selectGame('numbercrunch')">
-          <i class="fas fa-calculator game-icon"></i>
-          <span class="game-title">Number Crunch</span>
-        </div>
-        
-        <div class="game-card" onclick="selectGame('puzzlebattle')">
-          <i class="fas fa-puzzle-piece game-icon"></i>
-          <span class="game-title">Puzzle Battle</span>
-        </div>
-      </div>
-      
-      <div id="gameInfo" style="margin-top: 30px; display: none;">
-        <h3>Game Info</h3>
-        <p id="gameDescription"></p>
-        <button id="startGameBtn" onclick="startGame()" style="margin-top: 15px;"><i class="fas fa-play"></i> Start Game</button>
-      </div>
     </div>
 
-    <div id="createModal">
-      <h3><i class="fas fa-plus-circle"></i> Create Party</h3>
-      <input id="partyName" placeholder="Party Name" />
-      <select id="playerLimit">
-        <option value="4">4 Players</option>
-        <option value="6">6 Players</option>
-        <option value="8" selected>8 Players</option>
-      </select>
-      <div class="modal-buttons">
-        <button onclick="createParty()">Create</button>
-        <button onclick="closeModal('createModal')" style="background: #7b42f5;">Cancel</button>
-      </div>
-    </div>
+    <!-- LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <div id="joinModal">
-      <h3><i class="fas fa-sign-in-alt"></i> Join Party</h3>
-      <input id="joinCode" placeholder="Party Code" />
-      <div class="modal-buttons">
-        <button onclick="joinParty()">Join</button>
-        <button onclick="closeModal('joinModal')" style="background: #7b42f5;">Cancel</button>
-      </div>
-    </div>
-  </div>
+        // --- Your Custom Firebase Configuration ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyCCFW1URrsIk32vDJdF5C736cUWF-6nl_s",
+          authDomain: "family-tree-1b33d.firebaseapp.com",
+          projectId: "family-tree-1b33d",
+          storageBucket: "family-tree-1b33d.firebasestorage.app",
+          messagingSenderId: "800154343389",
+          appId: "1:800154343389:web:8e16d68fc2e5028a97c834",
+          measurementId: "G-PYTH753WDD"
+        };
 
-  <script>
-    // Firebase config
-    const firebaseConfig = {
-      apiKey: "AIzaSyD81BzDBcHWpQHtppO3i5vxX7Zs5iQOuOQ",
-      authDomain: "harshitjantaparty-77d46.firebaseapp.com",
-      projectId: "harshitjantaparty-77d46",
-    };
+        // --- Robust Firebase Initialization ---
+        let fbApp, auth, db, currentUser = null;
+        let isFirebaseAvailable = false;
+        // Using your Project ID as the app ID context
+        const appId = firebaseConfig.projectId;
 
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
-    const db = firebase.firestore();
+        try {
+            fbApp = initializeApp(firebaseConfig);
+            auth = getAuth(fbApp);
+            db = getFirestore(fbApp);
+            isFirebaseAvailable = true;
+            console.log("Firebase initialized successfully with custom config.");
+        } catch (e) {
+            console.warn("Firebase Init Failed:", e);
+            document.getElementById('user-display').innerText = "Offline Mode";
+        }
 
-    let currentUser = null;
-    let currentParty = null;
-    let partyListener = null;
-    let selectedGame = null;
-    const gameDescriptions = {
-      quickdraw: "Test your reflexes in this fast-paced drawing game! Players compete to draw prompts faster and more accurately than their opponents.",
-      wordrace: "Race against time and opponents to form as many words as possible from a set of letters. The fastest word master wins!",
-      numbercrunch: "A mathematical challenge where players solve equations against the clock. Perfect for number lovers and quick thinkers.",
-      puzzlebattle: "Collaborate or compete to solve intricate puzzles. Piece together clues faster than your opponents to claim victory."
-    };
+        // --- App State ---
+        const state = {
+            nodes: [],
+            connections: [],
+            selectedId: null,
+            nextId: 1,
+            view: { x: window.innerWidth/2, y: window.innerHeight/2, scale: 1 },
+            isDraggingNode: false,
+            isPanning: false,
+            dragStart: { x: 0, y: 0 },
+            draggedNodeId: null
+        };
 
-    // Player connection status
-    let connectionStatus = "Connected";
-    const connectionDot = document.getElementById('connectionDot');
-    const connectionStatusText = document.getElementById('connectionStatus');
+        // --- Core Application Logic ---
+        window.app = {
+            init: function() {
+                this.centerView();
+                this.render();
+                
+                // Auth Listeners
+                document.getElementById('auth-btn').addEventListener('click', this.handleLogin);
+                document.getElementById('guest-btn').addEventListener('click', this.handleGuest);
 
-    // Show notification function
-    function showNotification(message) {
-      const notification = document.getElementById('notification');
-      notification.textContent = message;
-      notification.style.display = 'block';
-      setTimeout(() => {
-        notification.style.display = 'none';
-      }, 3000);
-    }
+                if (isFirebaseAvailable) {
+                    onAuthStateChanged(auth, (user) => {
+                        currentUser = user;
+                        if (user) {
+                            document.getElementById('login-overlay').classList.add('hidden');
+                            document.getElementById('user-display').innerText = `User: ${user.email ? user.email.split('@')[0] : 'Guest'}`;
+                            window.showToast("Signed in as " + (user.email || "Guest"));
+                            window.cloudLoad(); // Auto load
+                        }
+                    });
+                }
+            },
 
-    // Update connection status
-    function updateConnectionStatus(status) {
-      connectionStatus = status;
-      connectionStatusText.textContent = status;
-      
-      if (status === "Connected") {
-        connectionDot.classList.remove('disconnected');
-      } else {
-        connectionDot.classList.add('disconnected');
-      }
-    }
+            handleLogin: async () => {
+                if (!isFirebaseAvailable) {
+                    window.app.handleGuest();
+                    window.showToast("Offline Mode: Cloud save unavailable");
+                    return;
+                }
+                const btn = document.getElementById('auth-btn');
+                const originalText = btn.innerHTML;
+                btn.innerHTML = "Connecting to Google...";
+                
+                try {
+                    // Actual Google Login using Popup
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(auth, provider);
+                    // The onAuthStateChanged listener handles the UI updates
+                } catch (e) {
+                    console.error("Login Error:", e);
+                    window.showToast("Login Failed: " + e.message);
+                    btn.innerHTML = originalText;
+                }
+            },
 
-    // Modal functions
-    function showModal(modalId) {
-      document.getElementById(modalId).style.display = 'block';
-      document.getElementById('overlay').style.display = 'block';
-    }
-    
-    function closeModal(modalId) {
-      document.getElementById(modalId).style.display = 'none';
-      document.getElementById('overlay').style.display = 'none';
-    }
+            handleGuest: async () => {
+                document.getElementById('login-overlay').classList.add('hidden');
+                // Try to sign in anonymously if possible, just to allow potential saves
+                if (isFirebaseAvailable) {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch(e) { console.warn("Anon auth failed", e); }
+                }
+                if (state.nodes.length === 0) {
+                    window.addNode(0, 0, "Root Ancestor", "alive");
+                }
+            },
 
-    document.getElementById('signInBtn').onclick = () => {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      auth.signInWithPopup(provider);
-    };
+            // --- Delete System (Modal Based) ---
+            showDeleteConfirm: () => {
+                if(!state.selectedId) return;
+                const node = state.nodes.find(n => n.id === state.selectedId);
+                document.getElementById('confirm-name').innerText = node ? node.name : "this person";
+                document.getElementById('confirm-modal').classList.remove('hidden');
+            },
 
-    document.getElementById('signOutBtn').onclick = () => {
-      auth.signOut();
-      location.reload();
-    };
+            closeConfirm: () => {
+                document.getElementById('confirm-modal').classList.add('hidden');
+            },
 
-    auth.onAuthStateChanged(user => {
-      if (user) {
-        currentUser = user;
-        document.getElementById('signInBtn').style.display = 'none';
-        document.getElementById('signOutBtn').style.display = 'inline-block';
-        document.getElementById('userName').textContent = user.displayName;
-        document.getElementById('lobbyUI').style.display = 'block';
-      } else {
-        document.getElementById('signInBtn').style.display = 'inline-block';
-        document.getElementById('signOutBtn').style.display = 'none';
-        document.getElementById('lobbyUI').style.display = 'none';
-        document.getElementById('lobby').style.display = 'none';
-        document.getElementById('games').style.display = 'none';
-      }
-    });
+            executeDelete: () => {
+                const id = state.selectedId;
+                if (!id) return;
 
-    function showCreateModal() {
-      showModal('createModal');
-      document.getElementById('partyName').value = `${currentUser.displayName}'s Party`;
-    }
+                // Logic
+                state.connections = state.connections.filter(c => c.from !== id && c.to !== id);
+                state.nodes = state.nodes.filter(n => n.id !== id);
 
-    function showJoinModal() {
-      showModal('joinModal');
-      document.getElementById('joinCode').value = '';
-      document.getElementById('joinCode').focus();
-    }
+                // UI Cleanup
+                window.app.closeConfirm();
+                state.selectedId = null;
+                document.getElementById('selection-panel').classList.add('hidden');
+                
+                window.updateStats();
+                window.render();
+                window.showToast("Member deleted");
+            },
 
-    function generateCode() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '';
-      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-      return code;
-    }
+            // --- Node Operations ---
+            addNode: (x, y, name = "New Person", status = "unsure") => {
+                const id = `n_${Date.now()}_${state.nextId++}`;
+                state.nodes.push({ id, x, y, name, status, collapsed: false });
+                window.updateStats();
+                window.render();
+                window.selectNode(id);
+                return id;
+            },
 
-    function createParty() {
-      const partyName = document.getElementById('partyName').value;
-      const maxPlayers = parseInt(document.getElementById('playerLimit').value);
-      const code = generateCode();
+            addRelative: (type) => {
+                const current = state.nodes.find(n => n.id === state.selectedId);
+                if (!current) return;
 
-      const partyData = {
-        name: partyName,
-        code,
-        maxPlayers,
-        hostId: currentUser.uid,
-        players: [{ id: currentUser.uid, name: currentUser.displayName }],
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        currentGame: null
-      };
+                const OFFSET = 200;
+                let newX = current.x;
+                let newY = current.y;
+                let newId;
 
-      db.collection("parties").doc(code).set(partyData).then(() => {
-        listenToPartyUpdates(code);
-        document.getElementById('lobbyUI').style.display = 'none';
-        document.getElementById('lobby').style.display = 'block';
-        closeModal('createModal');
-        showNotification('Party created successfully!');
-        updateConnectionStatus("Connected");
-      });
-    }
+                if (type === 'parent') {
+                    newY -= OFFSET;
+                    newId = window.app.addNode(newX, newY, "Parent", "alive");
+                    window.addConnection(newId, current.id, 'parent');
+                } else if (type === 'child') {
+                    newY += OFFSET;
+                    const siblings = state.connections.filter(c => c.from === current.id && c.type === 'parent');
+                    newX += (siblings.length * (OFFSET + 20)); 
+                    newId = window.app.addNode(newX, newY, "Child", "alive");
+                    window.addConnection(current.id, newId, 'parent');
+                } else if (type === 'spouse') {
+                    newX += OFFSET + 50;
+                    newId = window.app.addNode(newX, newY, "Spouse", "alive");
+                    window.addConnection(current.id, newId, 'spouse');
+                } else if (type === 'sibling') {
+                    newX += OFFSET + 50;
+                    const parents = state.connections.filter(c => c.to === current.id && c.type === 'parent');
+                    newId = window.app.addNode(newX, newY, "Sibling", "alive");
+                    if (parents.length > 0) {
+                        parents.forEach(p => window.addConnection(p.from, newId, 'parent'));
+                    } else {
+                        window.addConnection(current.id, newId, 'sibling');
+                    }
+                }
+            },
 
-    function joinParty() {
-      const code = document.getElementById('joinCode').value.toUpperCase();
+            setNodeStatus: (status) => {
+                if (state.selectedId) {
+                    const node = state.nodes.find(n => n.id === state.selectedId);
+                    if(node) {
+                        node.status = status;
+                        window.updateStats();
+                        window.render();
+                        window.selectNode(state.selectedId); 
+                    }
+                }
+            },
 
-      db.collection("parties").doc(code).get().then(doc => {
-        if (!doc.exists) return showNotification("Party not found");
-        const party = doc.data();
-        if (party.players.length >= party.maxPlayers) return showNotification("Party full");
-        if (party.players.some(p => p.id === currentUser.uid)) return showNotification("Already joined");
+            performSearch: () => {
+                const term = document.getElementById('search-input').value.toLowerCase();
+                const nodes = document.querySelectorAll('.node');
+                
+                if(term.length < 2) {
+                    nodes.forEach(n => { n.style.opacity = '1'; n.style.boxShadow = ''; });
+                    return;
+                }
 
-        const newPlayer = { id: currentUser.uid, name: currentUser.displayName };
-        db.collection("parties").doc(code).update({
-          players: firebase.firestore.FieldValue.arrayUnion(newPlayer)
-        }).then(() => {
-          listenToPartyUpdates(code);
-          document.getElementById('lobbyUI').style.display = 'none';
-          document.getElementById('lobby').style.display = 'block';
-          closeModal('joinModal');
-          showNotification('Joined party successfully!');
-          updateConnectionStatus("Connected");
+                nodes.forEach(n => {
+                    const name = n.querySelector('.node-name').innerText.toLowerCase();
+                    if(name.includes(term)) {
+                        n.style.opacity = '1';
+                        n.style.boxShadow = '0 0 20px yellow';
+                    } else {
+                        n.style.opacity = '0.2';
+                        n.style.boxShadow = 'none';
+                    }
+                });
+            },
+
+            centerView: () => {
+                state.view = { x: window.innerWidth / 2, y: window.innerHeight / 2, scale: 1 };
+                window.updateTransform();
+            },
+
+            render: () => { window.render(); }
+        };
+
+        // --- Global Helper Functions ---
+        window.createNewTree = () => {
+            const x = -state.view.x / state.view.scale + window.innerWidth/2/state.view.scale;
+            const y = -state.view.y / state.view.scale + window.innerHeight/2/state.view.scale;
+            window.app.addNode(x, y, "New Root", "alive");
+        };
+
+        window.toggleToolbar = () => {
+            document.getElementById('tools-panel').classList.toggle('hidden');
+        };
+
+        window.resetView = window.app.centerView;
+
+        window.addConnection = (fromId, toId, type) => {
+            const exists = state.connections.find(c => (c.from === fromId && c.to === toId) || (c.from === toId && c.to === fromId));
+            if (!exists) {
+                state.connections.push({ from: fromId, to: toId, type });
+                window.render();
+            }
+        };
+
+        window.showToast = (msg) => {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerText = msg;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 3000);
+        };
+
+        // --- Render System ---
+        window.render = () => {
+            const nodesLayer = document.getElementById('nodes-layer');
+            const connLayer = document.getElementById('connections-layer');
+            nodesLayer.innerHTML = '';
+            
+            const visibleIds = getVisibleNodeIds();
+
+            state.nodes.forEach(node => {
+                if (!visibleIds.has(node.id)) return;
+
+                const el = document.createElement('div');
+                el.className = `node ${node.id === state.selectedId ? 'selected' : ''} ${node.collapsed ? 'collapsed' : ''}`;
+                el.style.left = node.x + 'px';
+                el.style.top = node.y + 'px';
+                el.dataset.id = node.id;
+                el.dataset.status = node.status;
+                el.style.transform = 'translate(-50%, -50%)';
+
+                const hasChildren = state.connections.some(c => c.from === node.id && c.type === 'parent');
+                const collapseBtn = hasChildren 
+                    ? `<div class="collapse-btn" onclick="toggleCollapse('${node.id}', event)">${node.collapsed ? '+' : '-'}</div>` 
+                    : '';
+
+                el.innerHTML = `<div class="node-name">${node.name}</div><div class="node-status">${node.status}</div>${collapseBtn}`;
+                
+                el.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    state.isDraggingNode = true;
+                    state.draggedNodeId = node.id;
+                    window.selectNode(node.id);
+                });
+
+                nodesLayer.appendChild(el);
+            });
+
+            let svgHTML = '';
+            state.connections.forEach(conn => {
+                if (!visibleIds.has(conn.from) || !visibleIds.has(conn.to)) return;
+                const n1 = state.nodes.find(n => n.id === conn.from);
+                const n2 = state.nodes.find(n => n.id === conn.to);
+                if(n1 && n2) {
+                    let d = '';
+                    if (conn.type === 'parent') {
+                        const p1 = { x: n1.x, y: n1.y + 40 }; 
+                        const p2 = { x: n2.x, y: n2.y - 40 };
+                        const midY = (p1.y + p2.y) / 2;
+                        d = `M ${p1.x} ${p1.y} C ${p1.x} ${midY}, ${p2.x} ${midY}, ${p2.x} ${p2.y}`;
+                    } else {
+                        d = `M ${n1.x} ${n1.y} L ${n2.x} ${n2.y}`;
+                    }
+                    svgHTML += `<path d="${d}" class="${conn.type}" />`;
+                }
+            });
+            connLayer.innerHTML = svgHTML;
+            window.updateTransform();
+        };
+
+        window.updateTransform = () => {
+            const content = document.getElementById('content-layer');
+            const view = document.getElementById('viewport');
+            content.style.transform = `translate(${state.view.x}px, ${state.view.y}px) scale(${state.view.scale})`;
+            view.style.backgroundPosition = `${state.view.x}px ${state.view.y}px`;
+            view.style.backgroundSize = `${40 * state.view.scale}px ${40 * state.view.scale}px`;
+        };
+
+        window.selectNode = (id) => {
+            state.selectedId = id;
+            const node = state.nodes.find(n => n.id === id);
+            if (!node) return;
+
+            const panel = document.getElementById('selection-panel');
+            panel.classList.remove('hidden');
+            
+            document.getElementById('edit-name').value = node.name;
+            document.getElementById('sel-name-display').innerText = node.name;
+            document.querySelectorAll('.radio-btn').forEach(b => b.classList.remove('active'));
+            if(node.status) document.querySelector(`.radio-btn.${node.status}`).classList.add('active');
+
+            window.render();
+        };
+
+        window.getVisibleNodeIds = () => {
+            let visible = new Set(state.nodes.map(n => n.id));
+            let hidden = new Set();
+            let queue = [];
+            state.nodes.filter(n => n.collapsed).forEach(p => {
+                state.connections.filter(c => c.from === p.id && c.type === 'parent').forEach(c => {
+                    if(!hidden.has(c.to)) { hidden.add(c.to); queue.push(c.to); }
+                });
+            });
+            while(queue.length > 0) {
+                const currentId = queue.shift();
+                state.connections.filter(c => c.from === currentId && c.type === 'parent').forEach(c => {
+                    if(!hidden.has(c.to)) { hidden.add(c.to); queue.push(c.to); }
+                });
+            }
+            hidden.forEach(id => visible.delete(id));
+            return visible;
+        };
+
+        window.toggleCollapse = (id, e) => {
+            if(e) e.stopPropagation();
+            const node = state.nodes.find(n => n.id === id);
+            if(node) { node.collapsed = !node.collapsed; window.render(); }
+        };
+
+        window.updateStats = () => {
+            document.getElementById('stat-total').innerText = state.nodes.length;
+            document.getElementById('stat-alive').innerText = state.nodes.filter(n => n.status === 'alive').length;
+            document.getElementById('stat-dead').innerText = state.nodes.filter(n => n.status === 'dead').length;
+        };
+
+        // --- Event Listeners ---
+        document.getElementById('edit-name').addEventListener('input', (e) => {
+            if (state.selectedId) {
+                const node = state.nodes.find(n => n.id === state.selectedId);
+                if(node) {
+                    node.name = e.target.value;
+                    document.getElementById('sel-name-display').innerText = node.name;
+                    window.render();
+                }
+            }
         });
-      });
-    }
 
-    function listenToPartyUpdates(code) {
-      partyListener = db.collection("parties").doc(code).onSnapshot(doc => {
-        if (!doc.exists) {
-          handlePartyEnded('The party has been closed by the host.');
-          return;
-        }
-        
-        const party = doc.data();
-        currentParty = party;
-        updateLobbyUI(party);
-        
-        // Check if host started a game
-        if (currentParty.currentGame) {
-          // Redirect to game page
-          window.location.href = `${currentParty.currentGame}.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-        }
-      }, error => {
-        console.error("Error listening to party updates:", error);
-        updateConnectionStatus("Disconnected");
-        showNotification('Connection lost. Trying to reconnect...');
-        
-        // Try to reconnect after a delay
-        setTimeout(() => {
-          if (currentParty) {
-            listenToPartyUpdates(currentParty.code);
-          }
-        }, 3000);
-      });
-    }
-
-    function updateLobbyUI(party) {
-      document.getElementById('lobbyCode').textContent = party.code;
-      document.getElementById('lobbyName').textContent = party.name;
-      document.getElementById('currentPlayers').textContent = party.players.length;
-      document.getElementById('maxPlayers').textContent = party.maxPlayers;
-
-      const list = document.getElementById('playerList');
-      list.innerHTML = '';
-      
-      party.players.forEach(p => {
-        const li = document.createElement('li');
-        
-        // Create player avatar
-        const avatar = document.createElement('div');
-        avatar.className = 'player-avatar';
-        avatar.textContent = p.name.charAt(0);
-        li.appendChild(avatar);
-        
-        // Player info container
-        const infoContainer = document.createElement('div');
-        infoContainer.className = 'player-info';
-        
-        // Player name
-        const nameSpan = document.createElement('div');
-        nameSpan.className = 'player-name';
-        nameSpan.textContent = p.name;
-        infoContainer.appendChild(nameSpan);
-        
-        // Role tag
-        const roleTag = document.createElement('div');
-        roleTag.className = 'role-tag';
-        
-        if (p.id === party.hostId) {
-          roleTag.classList.add('host-tag');
-          roleTag.textContent = 'Host';
-        } else {
-          roleTag.classList.add('player-tag');
-          roleTag.textContent = 'Player';
-        }
-        infoContainer.appendChild(roleTag);
-        
-        li.appendChild(infoContainer);
-        
-        // Add kick button for host
-        if (currentUser.uid === party.hostId && p.id !== party.hostId) {
-          const kickBtn = document.createElement('button');
-          kickBtn.className = 'player-kick-btn';
-          kickBtn.innerHTML = '<i class="fas fa-times"></i>';
-          kickBtn.onclick = () => kickPlayer(p.id);
-          li.appendChild(kickBtn);
-        }
-        
-        list.appendChild(li);
-      });
-      
-      // Show appropriate controls based on host status
-      const hostControls = document.getElementById('hostControls');
-      const playerControls = document.getElementById('playerControls');
-      
-      if (currentUser.uid === party.hostId) {
-        hostControls.style.display = 'block';
-        playerControls.style.display = 'none';
-      } else {
-        hostControls.style.display = 'none';
-        playerControls.style.display = 'block';
-      }
-    }
-
-    function kickPlayer(playerId) {
-      if (!currentParty || !currentUser || currentUser.uid !== currentParty.hostId) {
-        showNotification('Only the host can kick players!');
-        return;
-      }
-      
-      const playerToKick = currentParty.players.find(p => p.id === playerId);
-      if (!playerToKick) return;
-      
-      db.collection("parties").doc(currentParty.code).update({
-        players: firebase.firestore.FieldValue.arrayRemove(playerToKick)
-      }).then(() => {
-        showNotification(`${playerToKick.name} has been kicked from the party`);
-      }).catch(error => {
-        console.error("Error kicking player:", error);
-        showNotification('Failed to kick player');
-      });
-    }
-
-    function showGames() {
-      // Only host can access game selection
-      if (currentUser.uid !== currentParty.hostId) {
-        showNotification('Only the host can start games!');
-        return;
-      }
-      
-      document.getElementById('lobby').style.display = 'none';
-      document.getElementById('games').style.display = 'block';
-      document.getElementById('gameInfo').style.display = 'none';
-      selectedGame = null;
-      
-      // Reset game card selections
-      document.querySelectorAll('.game-card').forEach(card => {
-        card.classList.remove('selected');
-      });
-    }
-
-    function goBackToLobby() {
-      document.getElementById('games').style.display = 'none';
-      document.getElementById('lobby').style.display = 'block';
-    }
-
-    function selectGame(game) {
-      selectedGame = game;
-      
-      // Highlight selected game
-      document.querySelectorAll('.game-card').forEach(card => {
-        card.classList.remove('selected');
-      });
-      event.currentTarget.classList.add('selected');
-      
-      document.getElementById('gameDescription').textContent = gameDescriptions[game];
-      document.getElementById('gameInfo').style.display = 'block';
-      
-      // Only show start button for host
-      const startBtn = document.getElementById('startGameBtn');
-      if (currentUser.uid === currentParty.hostId) {
-        startBtn.style.display = 'block';
-      } else {
-        startBtn.style.display = 'none';
-      }
-      
-      // Scroll to game info
-      document.getElementById('gameInfo').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    function startGame() {
-      if (!selectedGame || !currentParty) return;
-      
-      // Only host can start games - double verification
-      if (currentUser.uid !== currentParty.hostId) {
-        showNotification('Only the host can start games!');
-        return;
-      }
-      
-      // Update party with selected game
-      db.collection("parties").doc(currentParty.code).update({
-        currentGame: selectedGame
-      }).then(() => {
-        showNotification(`Starting ${selectedGame} game...`);
-        // Redirect to game page
-        window.location.href = `${selectedGame}.html?partyCode=${currentParty.code}&uid=${currentUser.uid}`;
-      });
-    }
-
-    function leaveParty() {
-      if (!currentParty || !currentUser) return;
-      
-      const userData = { id: currentUser.uid, name: currentUser.displayName };
-      
-      if (currentUser.uid === currentParty.hostId) {
-        // HOST: Delete entire lobby
-        db.collection("parties").doc(currentParty.code).delete()
-          .then(() => {
-            handlePartyEnded('Party deleted successfully!');
-          })
-          .catch(error => {
-            console.error("Error deleting party: ", error);
-            handlePartyEnded('Failed to delete party');
-          });
-      } else {
-        // REGULAR PLAYER: Just remove self
-        db.collection("parties").doc(currentParty.code).update({
-          players: firebase.firestore.FieldValue.arrayRemove(userData)
-        })
-        .then(() => {
-          handlePartyEnded('Left party successfully!');
-        })
-        .catch(error => {
-          console.error("Error leaving party: ", error);
-          showNotification('Error leaving party. Please try again.');
+        const viewport = document.getElementById('viewport');
+        viewport.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.node')) return;
+            state.isPanning = true;
+            state.dragStart = { x: e.clientX, y: e.clientY };
+            viewport.classList.add('panning');
+            if(!e.target.closest('#selection-panel') && !e.target.closest('.node')) {
+                state.selectedId = null;
+                document.getElementById('selection-panel').classList.add('hidden');
+                window.render();
+            }
         });
-      }
-    }
-    
-    function handlePartyEnded(message) {
-      if (partyListener) {
-        partyListener();
-        partyListener = null;
-      }
-      document.getElementById('lobby').style.display = 'none';
-      document.getElementById('games').style.display = 'none';
-      document.getElementById('lobbyUI').style.display = 'block';
-      currentParty = null;
-      updateConnectionStatus("Disconnected");
-      
-      if (message) {
-        showNotification(message);
-      }
-    }
 
-    // Handle host tab closure
-    window.addEventListener('beforeunload', function(event) {
-      if (currentParty && currentUser) {
-        if (currentUser.uid === currentParty.hostId) {
-          // Delete party if host leaves
-          db.collection("parties").doc(currentParty.code).delete()
-            .catch(error => console.error("Error deleting party during unload:", error));
-        } else {
-          // Remove player from party
-          const userData = { id: currentUser.uid, name: currentUser.displayName };
-          db.collection("parties").doc(currentParty.code).update({
-            players: firebase.firestore.FieldValue.arrayRemove(userData)
-          }).catch(error => console.error("Error removing player during unload:", error));
-        }
-      }
-    });
+        window.addEventListener('mousemove', (e) => {
+            if (state.isDraggingNode && state.draggedNodeId) {
+                const node = state.nodes.find(n => n.id === state.draggedNodeId);
+                if(node) {
+                    node.x += e.movementX / state.view.scale;
+                    node.y += e.movementY / state.view.scale;
+                    const el = document.querySelector(`.node[data-id="${node.id}"]`);
+                    if(el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+                    window.render(); 
+                }
+            } else if (state.isPanning) {
+                const dx = e.clientX - state.dragStart.x;
+                const dy = e.clientY - state.dragStart.y;
+                state.view.x += dx; state.view.y += dy;
+                state.dragStart = { x: e.clientX, y: e.clientY };
+                window.updateTransform();
+            }
+        });
 
-    // Initialize the app
-    window.onload = function() {
-      // Add animation to header
-      const header = document.querySelector('h1');
-      setInterval(() => {
-        const hue = Math.floor(Math.random() * 360);
-        header.style.textShadow = `0 0 20px hsl(${hue}, 100%, 50%)`;
-      }, 2000);
-      
-      // Initialize connection status
-      updateConnectionStatus("Disconnected");
-    };
-  </script>
+        window.addEventListener('mouseup', () => {
+            state.isDraggingNode = false; state.draggedNodeId = null; state.isPanning = false;
+            viewport.classList.remove('panning');
+        });
+
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const factor = 1 + (e.deltaY > 0 ? -0.1 : 0.1);
+            state.view.scale = Math.max(0.2, Math.min(3, state.view.scale * factor));
+            window.updateTransform();
+        }, { passive: false });
+
+        // --- Cloud Save/Load ---
+        window.cloudSave = async () => {
+            if(!currentUser) { window.showToast("Sign in required"); return; }
+            if(!isFirebaseAvailable) { window.showToast("Offline mode"); return; }
+            try {
+                // Using a standardized path structure to avoid permission errors
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'blueprints', 'main_tree');
+                await setDoc(docRef, {
+                    nodes: state.nodes,
+                    connections: state.connections,
+                    nextId: state.nextId,
+                    view: state.view,
+                    updatedAt: new Date().toISOString()
+                });
+                window.showToast("Blueprint Saved!");
+            } catch(e) {
+                console.error(e);
+                window.showToast("Save Failed: " + e.message);
+            }
+        };
+
+        window.cloudLoad = async () => {
+            if(!currentUser || !isFirebaseAvailable) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'blueprints', 'main_tree');
+                const snapshot = await getDoc(docRef);
+                if(snapshot.exists()) {
+                    const data = snapshot.data();
+                    state.nodes = data.nodes || [];
+                    state.connections = data.connections || [];
+                    state.nextId = data.nextId || 100;
+                    state.view = data.view || state.view;
+                    window.updateStats();
+                    window.render();
+                    window.showToast("Loaded from Cloud");
+                }
+            } catch(e) { console.error(e); }
+        };
+
+        window.app.init();
+    </script>
 </body>
 </html>
