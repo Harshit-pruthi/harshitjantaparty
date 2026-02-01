@@ -301,23 +301,45 @@
         // --- Robust Firebase Initialization ---
         let fbApp, auth, db, currentUser = null;
         let isFirebaseAvailable = false;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+        let isUserProject = false;
+        // Fixed ID for your project to keep data organized
+        const appId = 'family-tree-app'; 
         let autoSaveTimer = null;
 
+        // Your provided config
+        const userConfig = {
+            apiKey: "AIzaSyCCFW1URrsIk32vDJdF5C736cUWF-6nl_s",
+            authDomain: "family-tree-1b33d.firebaseapp.com",
+            projectId: "family-tree-1b33d",
+            storageBucket: "family-tree-1b33d.firebasestorage.app",
+            messagingSenderId: "800154343389",
+            appId: "1:800154343389:web:8e16d68fc2e5028a97c834",
+            measurementId: "G-PYTH753WDD"
+        };
+
         try {
-            if (typeof __firebase_config !== 'undefined') {
-                const firebaseConfig = JSON.parse(__firebase_config);
-                fbApp = initializeApp(firebaseConfig);
-                auth = getAuth(fbApp);
-                db = getFirestore(fbApp);
-                isFirebaseAvailable = true;
-                console.log("Firebase initialized successfully.");
-            } else {
-                throw new Error("Config missing");
-            }
+            // FORCE use of your config
+            fbApp = initializeApp(userConfig);
+            auth = getAuth(fbApp);
+            db = getFirestore(fbApp);
+            isFirebaseAvailable = true;
+            isUserProject = true;
+            console.log("Firebase initialized with YOUR project:", userConfig.projectId);
         } catch (e) {
-            console.warn("Firebase Init Failed (Offline Mode):", e);
-            document.getElementById('user-display').innerText = "Offline Mode";
+            console.warn("Firebase User Config Init Failed:", e);
+            // Backup: Fallback to environment if your config fails
+            try {
+                if (typeof __firebase_config !== 'undefined') {
+                    const envConfig = JSON.parse(__firebase_config);
+                    fbApp = initializeApp(envConfig);
+                    auth = getAuth(fbApp);
+                    db = getFirestore(fbApp);
+                    isFirebaseAvailable = true;
+                    isUserProject = false; 
+                }
+            } catch (err) {
+                document.getElementById('user-display').innerText = "Offline Mode";
+            }
         }
 
         // --- App State ---
@@ -364,16 +386,32 @@
                 }
                 const btn = document.getElementById('auth-btn');
                 btn.innerHTML = "Connecting...";
+                
                 try {
-                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                        await signInWithCustomToken(auth, __initial_auth_token);
-                    } else {
+                    // CRITICAL FIX: Since we are using YOUR project config, we CANNOT use the 
+                    // environment's custom token. We must use Anonymous Auth.
+                    if (isUserProject) {
                         await signInAnonymously(auth);
+                    } else {
+                        // Environment fallback logic
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
                     }
                 } catch (e) {
                     console.error("Auth failed", e);
-                    window.showToast("Login failed. Check console.");
-                    window.app.handleGuest();
+                    
+                    let msg = "Login failed. Check console.";
+                    if(e.code === 'auth/operation-not-allowed') {
+                        msg = "Error: Enable 'Anonymous Auth' in Firebase Console!";
+                    } else if (e.code === 'auth/api-key-not-valid') {
+                         msg = "Error: Invalid API Key in config";
+                    }
+
+                    window.showToast(msg);
+                    btn.innerHTML = "Sign In with Google"; 
                 }
             },
 
