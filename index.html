@@ -761,7 +761,10 @@
                 const indicator = document.getElementById('save-status');
                 indicator.innerText = "Error";
                 indicator.style.color = 'var(--dead)';
-                if(!silent) window.showToast("Save Failed");
+                
+                let errorMsg = "Save Failed";
+                if (e.code === 'permission-denied') errorMsg = "Permission Denied: Check Rules";
+                if(!silent) window.showToast(errorMsg);
             }
         };
 
