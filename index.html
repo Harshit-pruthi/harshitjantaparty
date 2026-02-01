@@ -86,7 +86,12 @@
         }
 
         .top-title { font-weight: bold; font-size: 18px; color: var(--accent); letter-spacing: 2px; }
-        .user-status { font-size: 12px; color: var(--alive); margin-right: 15px; }
+        
+        .status-area { display: flex; align-items: center; gap: 15px; }
+        .user-status { font-size: 12px; color: var(--alive); }
+        .save-indicator { font-size: 10px; color: #aaa; text-transform: uppercase; transition: color 0.3s; }
+        .save-indicator.saving { color: var(--unsure); animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
 
         /* Sidebar Containers */
         .sidebar-left, .sidebar-right {
@@ -190,7 +195,7 @@
             <h2 style="font-size: 24px; border-bottom: none; margin-bottom: 5px;">BLUEPRINT STUDIO</h2>
             <p style="color: #aaa; font-size: 12px; margin-bottom: 30px;">Cloud Sync & Storage</p>
             <div style="text-align: left; font-size: 12px; color: #888; margin-bottom: 10px;">
-                Sign in using your Google account to save your family tree to your personal Firebase project.
+                Sign in to save your family tree securely to the cloud.
             </div>
             <button id="auth-btn" class="login-btn">
                 <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.715H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.159 6.656 3.58 9 3.58z"/></svg>
@@ -222,7 +227,8 @@
     <div id="ui-layer">
         <div class="top-bar">
             <div class="top-title">FAMILY BLUEPRINT</div>
-            <div style="display: flex; align-items: center;">
+            <div class="status-area">
+                <div id="save-status" class="save-indicator">Synced</div>
                 <div class="user-status" id="user-display">Guest Mode</div>
                 <button onclick="toggleToolbar()" style="width: auto; padding: 5px 15px;">⚙️ Menu</button>
             </div>
@@ -233,7 +239,7 @@
                 <h3>Controls</h3>
                 <button onclick="createNewTree()">+ New Root</button>
                 <div class="btn-group">
-                    <button onclick="cloudSave()">☁ Save</button>
+                    <button onclick="cloudSave()">☁ Force Save</button>
                     <button onclick="cloudLoad()">☁ Load</button>
                 </div>
                 <button onclick="resetView()">Recenter</button>
@@ -289,34 +295,28 @@
     <!-- LOGIC -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // --- Your Custom Firebase Configuration ---
-        const firebaseConfig = {
-          apiKey: "AIzaSyCCFW1URrsIk32vDJdF5C736cUWF-6nl_s",
-          authDomain: "family-tree-1b33d.firebaseapp.com",
-          projectId: "family-tree-1b33d",
-          storageBucket: "family-tree-1b33d.firebasestorage.app",
-          messagingSenderId: "800154343389",
-          appId: "1:800154343389:web:8e16d68fc2e5028a97c834",
-          measurementId: "G-PYTH753WDD"
-        };
 
         // --- Robust Firebase Initialization ---
         let fbApp, auth, db, currentUser = null;
         let isFirebaseAvailable = false;
-        // Using your Project ID as the app ID context
-        const appId = firebaseConfig.projectId;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+        let autoSaveTimer = null;
 
         try {
-            fbApp = initializeApp(firebaseConfig);
-            auth = getAuth(fbApp);
-            db = getFirestore(fbApp);
-            isFirebaseAvailable = true;
-            console.log("Firebase initialized successfully with custom config.");
+            if (typeof __firebase_config !== 'undefined') {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                fbApp = initializeApp(firebaseConfig);
+                auth = getAuth(fbApp);
+                db = getFirestore(fbApp);
+                isFirebaseAvailable = true;
+                console.log("Firebase initialized successfully.");
+            } else {
+                throw new Error("Config missing");
+            }
         } catch (e) {
-            console.warn("Firebase Init Failed:", e);
+            console.warn("Firebase Init Failed (Offline Mode):", e);
             document.getElementById('user-display').innerText = "Offline Mode";
         }
 
@@ -348,8 +348,8 @@
                         currentUser = user;
                         if (user) {
                             document.getElementById('login-overlay').classList.add('hidden');
-                            document.getElementById('user-display').innerText = `User: ${user.email ? user.email.split('@')[0] : 'Guest'}`;
-                            window.showToast("Signed in as " + (user.email || "Guest"));
+                            document.getElementById('user-display').innerText = `User: ${user.uid.substring(0,4)}...`;
+                            window.showToast("Signed in. Auto-save enabled.");
                             window.cloudLoad(); // Auto load
                         }
                     });
@@ -363,32 +363,23 @@
                     return;
                 }
                 const btn = document.getElementById('auth-btn');
-                const originalText = btn.innerHTML;
-                btn.innerHTML = "Connecting to Google...";
-                
+                btn.innerHTML = "Connecting...";
                 try {
-                    // Actual Google Login using Popup
-                    const provider = new GoogleAuthProvider();
-                    await signInWithPopup(auth, provider);
-                    // The onAuthStateChanged listener handles the UI updates
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
                 } catch (e) {
-                    console.error("Login Error:", e);
-                    window.showToast("Login Failed: " + e.message);
-                    btn.innerHTML = originalText;
+                    console.error("Auth failed", e);
+                    window.showToast("Login failed. Check console.");
+                    window.app.handleGuest();
                 }
             },
 
-            handleGuest: async () => {
+            handleGuest: () => {
                 document.getElementById('login-overlay').classList.add('hidden');
-                // Try to sign in anonymously if possible, just to allow potential saves
-                if (isFirebaseAvailable) {
-                    try {
-                        await signInAnonymously(auth);
-                    } catch(e) { console.warn("Anon auth failed", e); }
-                }
-                if (state.nodes.length === 0) {
-                    window.addNode(0, 0, "Root Ancestor", "alive");
-                }
+                window.addNode(0, 0, "Root Ancestor", "alive");
             },
 
             // --- Delete System (Modal Based) ---
@@ -407,11 +398,9 @@
                 const id = state.selectedId;
                 if (!id) return;
 
-                // Logic
                 state.connections = state.connections.filter(c => c.from !== id && c.to !== id);
                 state.nodes = state.nodes.filter(n => n.id !== id);
 
-                // UI Cleanup
                 window.app.closeConfirm();
                 state.selectedId = null;
                 document.getElementById('selection-panel').classList.add('hidden');
@@ -419,6 +408,7 @@
                 window.updateStats();
                 window.render();
                 window.showToast("Member deleted");
+                window.triggerAutoSave();
             },
 
             // --- Node Operations ---
@@ -428,6 +418,7 @@
                 window.updateStats();
                 window.render();
                 window.selectNode(id);
+                window.triggerAutoSave();
                 return id;
             },
 
@@ -474,6 +465,7 @@
                         window.updateStats();
                         window.render();
                         window.selectNode(state.selectedId); 
+                        window.triggerAutoSave();
                     }
                 }
             },
@@ -525,6 +517,7 @@
             if (!exists) {
                 state.connections.push({ from: fromId, to: toId, type });
                 window.render();
+                window.triggerAutoSave();
             }
         };
 
@@ -658,6 +651,7 @@
                     node.name = e.target.value;
                     document.getElementById('sel-name-display').innerText = node.name;
                     window.render();
+                    window.triggerAutoSave();
                 }
             }
         });
@@ -695,6 +689,7 @@
         });
 
         window.addEventListener('mouseup', () => {
+            if (state.isDraggingNode) { window.triggerAutoSave(); }
             state.isDraggingNode = false; state.draggedNodeId = null; state.isPanning = false;
             viewport.classList.remove('panning');
         });
@@ -706,12 +701,27 @@
             window.updateTransform();
         }, { passive: false });
 
+        // --- Auto-Save System ---
+        window.triggerAutoSave = () => {
+            if (!currentUser || !isFirebaseAvailable) return;
+            
+            const indicator = document.getElementById('save-status');
+            indicator.innerText = "Saving...";
+            indicator.classList.add('saving');
+            indicator.style.color = 'var(--unsure)';
+
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = setTimeout(() => {
+                window.cloudSave(true); // true = silent mode
+            }, 1000); // 1 second debounce
+        };
+
         // --- Cloud Save/Load ---
-        window.cloudSave = async () => {
-            if(!currentUser) { window.showToast("Sign in required"); return; }
-            if(!isFirebaseAvailable) { window.showToast("Offline mode"); return; }
+        window.cloudSave = async (silent = false) => {
+            if(!currentUser) { if(!silent) window.showToast("Sign in required"); return; }
+            if(!isFirebaseAvailable) { if(!silent) window.showToast("Offline mode"); return; }
+            
             try {
-                // Using a standardized path structure to avoid permission errors
                 const docRef = doc(db, 'artifacts', appId, 'users', currentUser.uid, 'blueprints', 'main_tree');
                 await setDoc(docRef, {
                     nodes: state.nodes,
@@ -720,10 +730,20 @@
                     view: state.view,
                     updatedAt: new Date().toISOString()
                 });
-                window.showToast("Blueprint Saved!");
+                
+                // Success UI Update
+                const indicator = document.getElementById('save-status');
+                indicator.innerText = "Synced";
+                indicator.classList.remove('saving');
+                indicator.style.color = '#888';
+
+                if(!silent) window.showToast("Blueprint Saved!");
             } catch(e) {
                 console.error(e);
-                window.showToast("Save Failed: " + e.message);
+                const indicator = document.getElementById('save-status');
+                indicator.innerText = "Error";
+                indicator.style.color = 'var(--dead)';
+                if(!silent) window.showToast("Save Failed");
             }
         };
 
@@ -740,6 +760,7 @@
                     state.view = data.view || state.view;
                     window.updateStats();
                     window.render();
+                    document.getElementById('save-status').innerText = "Synced";
                     window.showToast("Loaded from Cloud");
                 }
             } catch(e) { console.error(e); }
