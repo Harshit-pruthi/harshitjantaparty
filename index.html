@@ -295,14 +295,13 @@
     <!-- LOGIC -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Robust Firebase Initialization ---
         let fbApp, auth, db, currentUser = null;
         let isFirebaseAvailable = false;
         let isUserProject = false;
-        // Fixed ID for your project to keep data organized
         const appId = 'family-tree-app'; 
         let autoSaveTimer = null;
 
@@ -327,19 +326,7 @@
             console.log("Firebase initialized with YOUR project:", userConfig.projectId);
         } catch (e) {
             console.warn("Firebase User Config Init Failed:", e);
-            // Backup: Fallback to environment if your config fails
-            try {
-                if (typeof __firebase_config !== 'undefined') {
-                    const envConfig = JSON.parse(__firebase_config);
-                    fbApp = initializeApp(envConfig);
-                    auth = getAuth(fbApp);
-                    db = getFirestore(fbApp);
-                    isFirebaseAvailable = true;
-                    isUserProject = false; 
-                }
-            } catch (err) {
-                document.getElementById('user-display').innerText = "Offline Mode";
-            }
+            document.getElementById('user-display').innerText = "Offline Mode";
         }
 
         // --- App State ---
@@ -370,7 +357,7 @@
                         currentUser = user;
                         if (user) {
                             document.getElementById('login-overlay').classList.add('hidden');
-                            document.getElementById('user-display').innerText = `User: ${user.uid.substring(0,4)}...`;
+                            document.getElementById('user-display').innerText = `User: ${user.email ? user.email.substring(0,8)+'...' : 'Google User'}`;
                             window.showToast("Signed in. Auto-save enabled.");
                             window.cloudLoad(); // Auto load
                         }
@@ -385,29 +372,22 @@
                     return;
                 }
                 const btn = document.getElementById('auth-btn');
-                btn.innerHTML = "Connecting...";
+                btn.innerHTML = "Opening Google Sign-In...";
                 
                 try {
-                    // CRITICAL FIX: Since we are using YOUR project config, we CANNOT use the 
-                    // environment's custom token. We must use Anonymous Auth.
-                    if (isUserProject) {
-                        await signInAnonymously(auth);
-                    } else {
-                        // Environment fallback logic
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    }
+                    // REAL Google Sign In
+                    const provider = new GoogleAuthProvider();
+                    await signInWithPopup(auth, provider);
                 } catch (e) {
                     console.error("Auth failed", e);
                     
-                    let msg = "Login failed. Check console.";
-                    if(e.code === 'auth/operation-not-allowed') {
-                        msg = "Error: Enable 'Anonymous Auth' in Firebase Console!";
-                    } else if (e.code === 'auth/api-key-not-valid') {
-                         msg = "Error: Invalid API Key in config";
+                    let msg = "Login failed: " + e.message;
+                    if(e.code === 'auth/unauthorized-domain') {
+                        msg = "Error: Domain not authorized in Firebase Console!";
+                    } else if (e.code === 'auth/popup-closed-by-user') {
+                        msg = "Login cancelled";
+                    } else if (e.code === 'auth/operation-not-allowed') {
+                        msg = "Error: Google Sign-In not enabled in Console";
                     }
 
                     window.showToast(msg);
